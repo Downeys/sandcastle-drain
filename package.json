@@ -6,7 +6,7 @@
     "sandcastle": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-library-assets.mjs",
     "drain": "tsx src/cli.ts drain",
     "ship": "tsx src/cli.ts ship",
     "sweep": "tsx src/cli.ts sweep",

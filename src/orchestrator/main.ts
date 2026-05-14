@@ -18,6 +18,10 @@ import {
   SANDBOX_CREDS_PATH,
 } from './prereqs.js';
 import {
+  IMPLEMENTER_PROMPT_RELATIVE,
+  STAGED_DIR_RELATIVE,
+} from '../stage.js';
+import {
   containsRateLimit,
   determineRunStatus,
   isRateLimitError,
@@ -774,12 +778,13 @@ async function processIssue(
           // hits its "please run gh auth login" path.
           env: { GH_TOKEN: ghToken },
         }),
-        promptFile: 'src/prompts/implementer.md',
+        promptFile: IMPLEMENTER_PROMPT_RELATIVE,
         promptArgs: {
           ISSUE_NUMBER: String(issue.number),
           ISSUE_TITLE: issue.title,
           SIBLING_CONTEXT: siblingContextBlock,
         },
+        copyToWorktree: [STAGED_DIR_RELATIVE],
         branchStrategy: { type: 'branch', branch },
         idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
         signal: AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS),

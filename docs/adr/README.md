@@ -16,4 +16,4 @@ Short. One page. The minimum: **Context** (the problem), **Decision** (what we c
 
 ## Index
 
-(Add entries here as ADRs are written.)
+- [0001 — Compiled library + staged content](0001-compiled-library-and-staged-content.md)

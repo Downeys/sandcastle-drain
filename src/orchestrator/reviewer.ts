@@ -17,6 +17,10 @@ import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import {
+  REVIEWER_PROMPT_RELATIVE,
+  STAGED_DIR_RELATIVE,
+} from '../stage.js';
 
 export type ReviewerVerdict = 'PASS' | 'FAIL';
 export type FindingSeverity = 'high' | 'medium' | 'low';
@@ -244,11 +248,12 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
         mounts: [{ hostPath: args.hostCredsPath, sandboxPath: args.sandboxCredsPath }],
         env: { GH_TOKEN: args.ghToken },
       }),
-      promptFile: 'src/prompts/reviewer.md',
+      promptFile: REVIEWER_PROMPT_RELATIVE,
       promptArgs: {
         ISSUE_NUMBER: String(args.issueNumber),
         BRANCH: args.branch,
       },
+      copyToWorktree: [STAGED_DIR_RELATIVE],
       branchStrategy: { type: 'branch', branch: args.branch },
       idleTimeoutSeconds: args.idleTimeoutSeconds,
       signal: AbortSignal.timeout(args.wallClockTimeoutMs),
