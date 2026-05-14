@@ -1,9 +1,9 @@
 /**
  * Drains the queue of `sandcastle`-labeled GitHub issues by running the agent
  * once per issue. See README.md for the wrapper design and
- * docs/agents/triage-labels.md for the label state machine.
+ * src/content/agent-docs/triage-labels.md for the label state machine.
  *
- * Run with: npx tsx .sandcastle/main.ts
+ * Run with: node dist/orchestrator/main.js (after `npm run build`)
  */
 import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
@@ -926,7 +926,7 @@ async function processIssue(
           // hits its "please run gh auth login" path.
           env: { GH_TOKEN: ghToken },
         }),
-        promptFile: '.sandcastle/prompt.md',
+        promptFile: 'src/prompts/implementer.md',
         promptArgs: {
           ISSUE_NUMBER: String(issue.number),
           ISSUE_TITLE: issue.title,

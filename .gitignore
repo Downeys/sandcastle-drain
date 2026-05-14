@@ -1,6 +1,2 @@
 node_modules/
-.sandcastle/.env
-.sandcastle/logs/
-.sandcastle/worktrees/
-.sandcastle/sessions/
-.sandcastle/patches/
+dist/

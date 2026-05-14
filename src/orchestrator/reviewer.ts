@@ -11,7 +11,7 @@
  * - `formatReviewerComment` — render the verdict as a GitHub issue comment
  *
  * The reviewer is advisory: a `FAIL` verdict produces a comment for the human
- * to weigh; it does not gate the merge. See `.sandcastle/reviewer.md`.
+ * to weigh; it does not gate the merge. See `src/prompts/reviewer.md`.
  */
 import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
@@ -244,7 +244,7 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
         mounts: [{ hostPath: args.hostCredsPath, sandboxPath: args.sandboxCredsPath }],
         env: { GH_TOKEN: args.ghToken },
       }),
-      promptFile: '.sandcastle/reviewer.md',
+      promptFile: 'src/prompts/reviewer.md',
       promptArgs: {
         ISSUE_NUMBER: String(args.issueNumber),
         BRANCH: args.branch,

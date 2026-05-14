@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "drain": "tsx .sandcastle/main.ts",
-    "ship": "tsx .sandcastle/ship.ts",
-    "sweep": "tsx .sandcastle/sweep.ts",
+    "build": "tsc",
+    "drain": "tsx src/orchestrator/main.ts",
+    "ship": "tsx src/orchestrator/ship.ts",
+    "sweep": "tsx src/orchestrator/sweep.ts",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"lint: no linter configured\"",
     "test": "vitest run"
