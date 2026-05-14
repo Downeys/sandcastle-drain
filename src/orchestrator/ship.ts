@@ -4,20 +4,13 @@
  * merge auto-closes the issue regardless of what the agent's commit messages
  * looked like.
  *
- * Run with: npm run ship <issue-number>     (also accepts `npm run ship -- <N>`)
- *
- * After this completes successfully, run `npm run sweep <N>` to clean up the
- * local worktree, branch, and pull main.
- *
- * The core logic is exposed as `shipBranch` so the drain (`main.ts`) can invoke
- * it inline when the CI gate and reviewer both pass; the CLI entry below just
- * parses the issue number and calls it.
+ * Invoked by `src/cli.ts` as `sandcastle ship <issue>`. After this completes
+ * successfully, the user runs `sandcastle sweep <issue>` to clean up the
+ * local worktree, branch, and pull main. The drain orchestrator (`main.ts`)
+ * also calls `shipBranch` inline when the CI gate and reviewer both pass.
  */
 import { execa } from 'execa';
-import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
-
-const REPO_ROOT = resolve(import.meta.dirname, '..');
+import { REPO_ROOT } from './prereqs.js';
 
 interface RunResult {
   exitCode: number;
@@ -63,7 +56,7 @@ export async function shipBranch(args: ShipBranchArgs): Promise<ShipBranchResult
   const branchCheck = await run('git', ['rev-parse', '--verify', branch], { reject: false });
   if (branchCheck.exitCode !== 0) {
     throw new ShipError(
-      `Branch \`${branch}\` not found locally. Did you already ship this issue, or has \`npm run drain\` run yet?`,
+      `Branch \`${branch}\` not found locally. Did you already ship this issue, or has \`sandcastle drain\` run yet?`,
     );
   }
 
@@ -76,7 +69,7 @@ export async function shipBranch(args: ShipBranchArgs): Promise<ShipBranchResult
   // Explicit `Closes #N` so the squash-merge auto-closes the issue regardless of
   // what's in commit messages — `gh pr create --fill` only reads the first
   // commit's body, which is fragile when an agent makes multiple commits.
-  const body = `Closes #${args.issue}\n\n_Created via \`npm run ship ${args.issue}\`._`;
+  const body = `Closes #${args.issue}\n\n_Created via \`sandcastle ship ${args.issue}\`._`;
 
   console.log(`[ship] Creating PR for ${branch}...`);
   const prCreate = await run(
@@ -117,35 +110,7 @@ export async function shipBranch(args: ShipBranchArgs): Promise<ShipBranchResult
   await run('git', ['push', 'origin', '--delete', branch]);
 
   console.log(
-    `[ship] Done. Run \`npm run sweep ${args.issue}\` to clean up the local worktree and branch.`,
+    `[ship] Done. Run \`sandcastle sweep ${args.issue}\` to clean up the local worktree and branch.`,
   );
   return { branch, prUrl };
-}
-
-function fail(msg: string): never {
-  console.error(`[ship] ${msg}`);
-  process.exit(1);
-}
-
-function parseIssueArg(): number {
-  const arg = process.argv[2];
-  if (!arg || !/^\d+$/.test(arg)) {
-    fail('Usage: npm run ship <issue-number>  (e.g. `npm run ship 3`)');
-  }
-  return Number(arg);
-}
-
-async function cli(): Promise<void> {
-  const n = parseIssueArg();
-  try {
-    await shipBranch({ issue: n });
-  } catch (err) {
-    if (err instanceof ShipError) fail(err.message);
-    throw err;
-  }
-}
-
-// Only run the CLI when invoked directly (not when imported by main.ts).
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await cli();
 }

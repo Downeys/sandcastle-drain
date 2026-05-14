@@ -2,11 +2,14 @@
   "name": "sandcastle-drain",
   "private": true,
   "type": "module",
+  "bin": {
+    "sandcastle": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
-    "drain": "tsx src/orchestrator/main.ts",
-    "ship": "tsx src/orchestrator/ship.ts",
-    "sweep": "tsx src/orchestrator/sweep.ts",
+    "drain": "tsx src/cli.ts drain",
+    "ship": "tsx src/cli.ts ship",
+    "sweep": "tsx src/cli.ts sweep",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"lint: no linter configured\"",
     "test": "vitest run"

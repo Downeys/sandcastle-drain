@@ -3,23 +3,18 @@
  * worktree directory (Windows-safe via the shared helper), prunes git's
  * worktree metadata, and deletes the local branch.
  *
- * Run with: npm run sweep <issue-number>     (also accepts `npm run sweep -- <N>`)
- *
- * Refuses to run unless a MERGED PR exists for the branch — sweep is post-merge
- * cleanup, not a way to discard in-flight work. To discard a still-open branch
- * intentionally, use `git worktree remove` and `git branch -D` directly.
- *
- * The core logic is exposed as `sweepBranch` so the drain (`main.ts`) can
- * invoke it inline after a successful auto-ship; the CLI entry below just
- * parses the issue number and calls it.
+ * Invoked by `src/cli.ts` as `sandcastle sweep <issue>`. Refuses to run unless
+ * a MERGED PR exists for the branch — sweep is post-merge cleanup, not a way
+ * to discard in-flight work. To discard a still-open branch intentionally,
+ * use `git worktree remove` and `git branch -D` directly. The drain
+ * orchestrator (`main.ts`) also calls `sweepBranch` inline after a successful
+ * auto-ship.
  */
 import { execa } from 'execa';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { REPO_ROOT } from './prereqs.js';
 import { removeWorktreeDir } from './worktree-cleanup.js';
-
-const REPO_ROOT = resolve(import.meta.dirname, '..');
 
 interface RunResult {
   exitCode: number;
@@ -85,7 +80,7 @@ export async function sweepBranch(args: SweepBranchArgs): Promise<SweepBranchRes
   const merged = await findMergedPr(branch);
   if (!merged) {
     throw new SweepError(
-      `No MERGED PR found for ${branch}. Sweep is post-merge cleanup only — run \`npm run ship ${args.issue}\` first, or remove the worktree manually if you want to discard the branch without merging.`,
+      `No MERGED PR found for ${branch}. Sweep is post-merge cleanup only — run \`sandcastle ship ${args.issue}\` first, or remove the worktree manually if you want to discard the branch without merging.`,
     );
   }
   console.log(`[sweep] Found merged PR: ${merged.url}`);
@@ -119,31 +114,4 @@ export async function sweepBranch(args: SweepBranchArgs): Promise<SweepBranchRes
 
   console.log(`[sweep] Done. #${args.issue} is fully cleaned up.`);
   return { branch, prUrl: merged.url };
-}
-
-function fail(msg: string): never {
-  console.error(`[sweep] ${msg}`);
-  process.exit(1);
-}
-
-function parseIssueArg(): number {
-  const arg = process.argv[2];
-  if (!arg || !/^\d+$/.test(arg)) {
-    fail('Usage: npm run sweep <issue-number>  (e.g. `npm run sweep 3`)');
-  }
-  return Number(arg);
-}
-
-async function cli(): Promise<void> {
-  const n = parseIssueArg();
-  try {
-    await sweepBranch({ issue: n });
-  } catch (err) {
-    if (err instanceof SweepError) fail(err.message);
-    throw err;
-  }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await cli();
 }
