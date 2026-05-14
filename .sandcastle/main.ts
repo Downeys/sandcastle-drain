@@ -28,7 +28,7 @@ import { tryRecoverCommits } from './teardown.js';
 import { removeWorktreeDir } from './worktree-cleanup.js';
 import { formatReviewerComment, formatReviewerErrorComment, runReviewer } from './reviewer.js';
 import type { ReviewerOutput, ReviewerVerdict } from './reviewer.js';
-import { formatCiSection, runCiGate, type CiGateResult } from './ci-gate.js';
+import { detectPackageManager, formatCiSection, runCiGate, type CiGateResult } from './ci-gate.js';
 import { shipBranch } from './ship.js';
 import { sweepBranch } from './sweep.js';
 import {
@@ -964,7 +964,7 @@ async function processIssue(
         worktreePath,
       });
       console.log(
-        `[wrapper] CI gate: ${ciResult.ok ? 'PASS' : `FAIL (pnpm ${ciResult.failedCheck})`}`,
+        `[wrapper] CI gate: ${ciResult.ok ? 'PASS' : `FAIL (${ciResult.packageManager} ${ciResult.failedCheck})`}`,
       );
     } catch (err) {
       console.error(`[wrapper] CI gate threw — treating as failure:`, err);
@@ -973,6 +973,7 @@ async function processIssue(
         failedCheck: 'install',
         runs: [],
         logPath: '<ci-gate threw before logging>',
+        packageManager: detectPackageManager(REPO_ROOT),
       };
     }
   }
