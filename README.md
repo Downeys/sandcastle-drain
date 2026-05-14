@@ -1,205 +1,108 @@
-# Sandcastle drain
+# sandcastle-drain
 
-A local, attended autonomous-coding setup. Claude Code runs inside [Sandcastle](https://github.com/mattpocock/sandcastle) sandboxes, draining a queue of `sandcastle`-labeled GitHub issues one at a time and committing to per-issue branches that you review and push by hand.
-
-> **This is not for unattended cloud operation.** Authentication uses your Claude Pro/Max subscription via a volume-mounted OAuth credential — an unsupported path that future Sandcastle releases may break (see [Auth caveat](#auth-caveat)). Run it on your own hardware while you're around to interrupt it.
-
-## Customize for your project
-
-Before the first drain, do the following in the project you've dropped this template into:
-
-- **Populate `CONTEXT.md`** with your domain vocabulary. Until you do, the reviewer's nomenclature-binding check is a no-op.
-- **Start writing ADRs in `docs/adr/`** as material decisions land. The reviewer reads them and flags diffs that contradict written decisions.
-- **Add `typecheck`, `lint`, and `test` scripts to your `package.json`** — the wrapper's CI gate (`src/orchestrator/ci-gate.ts`) invokes `pnpm typecheck`, `pnpm lint`, and `pnpm test` after every implementer commit, and refuses to ship if any fail. Stub them out (`"echo skip"`) only as a starting point; the gate is only useful once they actually run.
-- **Optionally extend the reviewer rubric.** The genericized rubric in [src/prompts/reviewer.md.tpl](src/prompts/reviewer.md.tpl) Step 3 covers principle-level checks. Project-specific aggregate rules and ADR-grounded checks live in `CONTEXT.md` and `docs/adr/` — the reviewer eager-loads both and applies them automatically. If you want extra hard-coded checks (e.g. "no class extends X"), add them under the relevant category in `reviewer.md.tpl`.
-- **The wrapper's Docker image** is named `sandcastle:<your-directory-name>` (derived from `basename(REPO_ROOT)` in [src/orchestrator/main.ts](src/orchestrator/main.ts)). `npx sandcastle docker build-image` produces this name without a flag.
-
-## Contributing
-
-Before making changes, read the development principles in [`src/content/principles/`](src/content/principles/README.md). Key files:
-
-- **Language & types** — TypeScript strict mode, Zod at boundaries, branded types, tagged-union `Result<T,E>`
-- **Architecture** — Onion rings (Domain / Application / External / Presentation), lint-enforced inward deps
-- **Testing** — Vitest, 90% coverage gate on `packages/domain`, property-based with `fast-check`
-- **Linting** — ESLint + `eslint-plugin-boundaries`, Prettier, Husky pre-commit
+A wrapper around [`@ai-hero/sandcastle`](https://github.com/mattpocock/sandcastle) that drains a queue of GitHub issues labeled `sandcastle`, runs Claude Code against each in an isolated Docker worktree, and posts results back to the issue. Ships an opinionated set of engineering principles and a reviewer rubric that enforces them.
 
 ## Prerequisites
 
-- Docker Desktop running
-- Node 22+
-- The `gh` CLI, authenticated against a GitHub remote on this repo
-- The Claude Code CLI, authenticated locally with your Pro/Max subscription
+The wrapper relies on the host machine to supply these. None of them are installed for you.
 
-## One-time setup
+- **Docker installed and running.** The agent runs inside the container declared in `docker/Dockerfile` (Node 22 + git + gh + Claude Code CLI + Playwright + Chromium).
+- **Node.js 20+** on the host (the wrapper itself is a Node CLI).
+- **`gh` CLI installed and `gh auth login` complete.** The wrapper shells out to `gh issue list / edit / comment / create` and `gh pr create / merge`.
+- **Claude Code CLI installed locally**, with OAuth credentials persisted to `~/.config/sandcastle-claude-creds/`. The wrapper bind-mounts that directory into every sandbox so the agent reuses your Pro/Max subscription. Bootstrap once with:
+  ```sh
+  mkdir -p ~/.config/sandcastle-claude-creds
+  docker run -it --rm \
+    --entrypoint claude \
+    -v ~/.config/sandcastle-claude-creds:/home/agent/.claude \
+    sandcastle:<your-image-name> \
+    login
+  ```
+  `--entrypoint claude` overrides the base image's `sleep infinity` so the device-code flow runs. Re-run if a drain reports auth errors mid-flight.
+- **Matt Pocock's `tdd` and `diagnose` skills** installed at `<host>/.claude/skills/{tdd,diagnose}/` via:
+  ```sh
+  npx skills@latest add mattpocock/skills/tdd mattpocock/skills/diagnose
+  ```
+  The wrapper probes for these at startup and refuses to drain without them.
+- **A GitHub repo with the canonical labels.** The wrapper auto-creates any missing labels (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`) on first run.
 
-1. **Install dependencies**
+## Install
 
-   ```sh
-   npm install
-   ```
-
-2. **Build the sandbox image**
-
-   ```sh
-   npx sandcastle docker build-image
-   ```
-
-   This builds the image declared in [`docker/Dockerfile`](docker/Dockerfile) (Node 22 + git + gh + Claude Code CLI + Playwright + Chromium) and tags it `sandcastle:<your-directory-name>`. Re-run it after editing the Dockerfile.
-
-3. **Bootstrap auth into a host directory** (one shot)
-
-   Replace `<your-dir-name>` with the directory this template lives in (e.g. `sandcastle-drain`, or whatever you renamed it to).
-
-   PowerShell:
-
-   ```powershell
-   New-Item -ItemType Directory -Force -Path "$HOME/.config/sandcastle-claude-creds" | Out-Null
-   docker run -it --rm `
-     --entrypoint claude `
-     -v "${HOME}/.config/sandcastle-claude-creds:/home/agent/.claude" `
-     sandcastle:<your-dir-name> `
-     login
-   ```
-
-   Bash / zsh:
-
-   ```sh
-   mkdir -p ~/.config/sandcastle-claude-creds
-   docker run -it --rm \
-     --entrypoint claude \
-     -v ~/.config/sandcastle-claude-creds:/home/agent/.claude \
-     sandcastle:<your-dir-name> \
-     login
-   ```
-
-   `--entrypoint claude` is required because the Sandcastle base image sets `ENTRYPOINT ["sleep", "infinity"]`. Without the override, `claude login` would be appended as arguments to `sleep` instead of replacing it. In the PowerShell version, `${HOME}` is expanded by PowerShell before docker sees the `-v` argument — `~` would be passed through literally and docker would create a directory named `~`.
-
-   This runs the device-code OAuth flow once and persists the resulting credentials to `~/.config/sandcastle-claude-creds/`. The wrapper bind-mounts that directory into every subsequent run. Re-run this command if a drain reports auth errors mid-flight.
-
-4. **Make sure this clone has a GitHub remote**
-
-   ```sh
-   git remote -v
-   # If empty:
-   git remote add origin git@github.com:<you>/<repo>.git
-   git push -u origin main
-   ```
-
-   The wrapper's first run also probes that every label it touches (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `needs-info`, `oversized`) exists in the repo and creates any that are missing — no manual label bootstrap needed.
-
-5. **Install workflow skills to your home directory** (one-time, not tied to this repo)
-
-   PowerShell:
-
-   ```powershell
-   Set-Location $HOME
-   npx skills@latest add mattpocock/skills `
-     -s grill-me -s to-prd -s to-issues -s triage -s grill-with-docs `
-     -a claude-code -y
-   ```
-
-   Bash / zsh:
-
-   ```sh
-   cd ~
-   npx skills@latest add mattpocock/skills \
-     -s grill-me -s to-prd -s to-issues -s triage -s grill-with-docs \
-     -a claude-code -y
-   ```
-
-   These are interactive skills you use from your local Claude Code, not the agent — they live in `~/.claude/skills/` and never enter any container. The agent-side skills (`tdd`, `diagnose`, `zoom-out`) are committed to this repo under [`.claude/skills/`](.claude/skills/).
-
-## Daily workflow
-
-1. **Fill the backlog (locally, with you driving)**
-
-   Use Claude Code interactively in this repo and invoke `grill-me` → `to-prd` → `to-issues` to spec a piece of work, then create one or more `sandcastle`-labeled issues from the resulting PRD.
-
-2. **Drain the queue**
-
-   ```sh
-   npm run drain
-   ```
-
-   The wrapper:
-   - Probes `.claude/skills/{tdd,diagnose}/SKILL.md` and `claude --version` before doing anything network-side.
-   - Picks the oldest open issue with `sandcastle` that doesn't also have `in-progress` or `blocked`.
-   - Adds `in-progress`, runs the agent in a fresh sandbox on a branch named `agent/issue-<N>`, then posts a status comment to the issue and applies outcome labels.
-   - Continues until the queue is empty, a rate-limit signal is detected, or you Ctrl-C it.
-
-3. **Review each `agent/issue-*` branch**
-
-   The wrapper transitions issues to one of three terminal states (see [src/content/agent-docs/triage-labels.md](src/content/agent-docs/triage-labels.md) for the full table):
-
-   | Outcome from wrapper                                                    | Your move                                                                                                                                                                                                                                                                                                                                                            |
-   | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | `needs-review` (commits exist)                                          | Check out the branch. **Branch is good** → `git push` + open PR + merge. **Branch is wrong-headed** → comment what was wrong, swap `needs-review` for `sandcastle` + `retry`; the next drain discards the branch and re-attempts. **Branch needs minor tweaks** → just standard git: `git checkout`, edit, commit, push, PR. No agent involvement, no label changes. |
-   | `needs-info` (no commits, agent emitted COMPLETE)                       | The agent had a question rather than work. Read the comment + the agent's output, clarify on the issue, then re-add `sandcastle` if you want to re-queue it.                                                                                                                                                                                                         |
-   | `sandcastle` (no commits, no completion signal — timeout or hard error) | The wrapper leaves the issue in the queue. Re-run the drain, or if the issue is consistently failing, swap `sandcastle` for `blocked` and look at the log.                                                                                                                                                                                                           |
-
-## Label vocabulary
-
-Five canonical triage states and the Sandcastle workflow labels — see [src/content/agent-docs/triage-labels.md](src/content/agent-docs/triage-labels.md). The wrapper-managed transitions live there too. Don't duplicate the table here; two sources of truth will drift.
-
-## Auth caveat
-
-Sandcastle issue [#191](https://github.com/mattpocock/sandcastle/issues/191) ("support Claude subscription auth") is closed wontfix; the maintainers' first-class auth path is `ANTHROPIC_API_KEY`. This template uses volume-mounted Pro/Max OAuth credentials anyway because the alternative is double-paying for Pro/Max + API access on a single-user, attended tool.
-
-Three guardrails:
-
-- **Sandcastle is pinned to an exact version** in `package.json` (currently `0.5.7`). Don't bump with `^` — read the changelog and re-test before upgrading.
-- **The wrapper does a startup auth probe** — it checks the credential dir exists and `claude --version` succeeds before entering the loop. If you get an auth-related failure mid-drain, re-run the bootstrap from step 3 of one-time setup.
-- **The wrapper is local-only.** Don't deploy it to a cloud VM under a Pro/Max subscription.
-
-Symptoms that mean re-bootstrap auth: the agent's first iteration fails with an auth-style error within ~30s of the run starting (the wrapper logs it under `.sandcastle/logs/`), or every issue in the drain fails identically with no visible work.
-
-## Timeouts
-
-The wrapper sets two timeouts on every run:
-
-- **`idleTimeoutSeconds: 600`** — 10 minutes of agent silence kills the run. Resets on every line of output, so a chatty-but-looping agent doesn't trip it.
-- **`signal: AbortSignal.timeout(5_400_000)`** — 90 minutes of wall-clock catches the chatty-loop case.
-
-If a 90-minute run isn't enough, the right move is to split the issue smaller, not to bump this number.
-
-## Rate-limit handling
-
-The wrapper detects rate limits by string-matching the agent's output for any of:
-
-```
-rate limit
-usage limit
-Please try again
+```sh
+npm install --save-dev sandcastle-drain
 ```
 
-If hit, the loop exits cleanly and the remaining issues are reported as `skipped (rate-limited)` in the summary. Update the [`RATE_LIMIT_MARKERS` constant in `src/orchestrator/main.ts`](src/orchestrator/main.ts) if you encounter different language in real errors.
+The package exposes a single binary, `sandcastle`. Invoke it via `npx`:
 
-## Don't push from inside the sandbox
-
-The agent is instructed not to run `git push` or `gh pr create`. The wrapper does a cheap defensive check after every run (`git rev-parse --verify origin/agent/issue-<N>`) and surfaces a warning in the status comment if the branch was pushed anyway. **If you ever see `agent/issue-N` on the remote, that's a bug in this wrapper or the prompt — file an issue.**
-
-## Project layout
-
+```sh
+npx sandcastle <subcommand>
 ```
-.
-├── .claude/
-│   └── skills/             (agent-side skills: tdd, diagnose, zoom-out — committed)
-├── .sandcastle/            (runtime artifacts — gitignored: logs, worktrees, splits.json, .env)
-├── docker/
-│   └── Dockerfile          (Node 22 + git + gh + Claude Code CLI + Playwright)
-├── docs/
-│   └── adr/                (architectural decisions — start empty, add as you decide)
-├── src/
-│   ├── orchestrator/       (wrapper: main, ship, sweep, ci-gate, reviewer, etc.)
-│   ├── prompts/
-│   │   ├── implementer.md.tpl  (agent prompt template; {{KEY}} placeholders)
-│   │   └── reviewer.md.tpl     (advisory reviewer prompt template)
-│   ├── render-prompt.ts    (reads .md.tpl, substitutes {{KEY}}, returns string)
-│   └── content/
-│       ├── agent-docs/     (issue-tracker / triage-labels / windows-cleanup)
-│       └── principles/     (development principles — apply to every commit)
-├── CLAUDE.md               (project guidance for Claude Code)
-├── CONTEXT.md              (canonical domain vocabulary — populate before domain code)
-├── tsconfig.json           (NodeNext, rootDir=src/, outDir=dist/)
-└── README.md
-```
+
+## Usage
+
+| Command                 | What it does                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `npx sandcastle drain`  | Process every open issue labeled `sandcastle`. One agent run per issue, on a branch `agent/issue-N`.    |
+| `npx sandcastle ship N` | Push `agent/issue-N`, open a PR with `Closes #N`, squash-merge it, and delete the remote branch.       |
+| `npx sandcastle sweep N`| Post-merge cleanup: pull main, remove the worktree directory, prune git's worktree metadata, delete the local branch. Refuses to run unless a MERGED PR exists for the branch. |
+
+All paths resolve relative to the host working directory where you ran `npx sandcastle`. The wrapper writes runtime artifacts to `<host-cwd>/.sandcastle/` (logs, worktrees, staged content, optional `splits.json`).
+
+## What the wrapper enforces
+
+Two layers run on every implementer commit: a fixed set of **development principles** the implementer must follow, and a four-category **reviewer rubric** that audits the diff after the commits land.
+
+The principle files ship inside the package at `dist/content/principles/` and are staged into `<host-cwd>/.sandcastle/staged/principles/` before each drain so the agent can read them from inside the sandbox. Twelve files cover language and types, architecture (onion layers), CQRS, frontend organization, domain modeling, testing, linting and tooling, clean code, personal-use trade-offs, context-budget discipline (100k target / 150k ceiling), Claude Code interactive-vs-autonomous mode deltas, and a README that indexes the rest. Both the implementer and the reviewer eager-load the relevant files.
+
+The reviewer rubric is four categories. **Domain integrity** flags anemic-model violations and any aggregate-specific invariants the host has written into `CONTEXT.md` or an ADR. **Test discipline** enforces the behavior-required test rule (every commit that introduces testable behavior ships with tests), property-based testing on state machines, and integration tests that hit real infrastructure rather than mocks. **Architecture intent** rejects inheritance of domain classes, impurity in the domain layer, and cross-layer imports that violate the onion direction. **Glossary & ADR alignment** checks that new names match `CONTEXT.md` verbatim and that diffs don't contradict any ADR under `docs/adr/`.
+
+## Reviewer-gating behavior
+
+The reviewer is **gating in the success path** and emits findings advisorily on the rejection path — it is not "advisory only." `handleRejection` in `dist/orchestrator/main.ts` is the load-bearing function; the flow is:
+
+1. After the implementer commits and the CI gate passes, the reviewer sub-agent runs read-only against the worktree and emits a JSON verdict (`PASS` or `FAIL`) with a structured findings array.
+2. **`PASS` + CI green** → the wrapper auto-ships and sweeps: push, open a PR with `Closes #N`, squash-merge, delete the remote branch. The issue auto-closes via the squash-merge body.
+3. **`FAIL`** → `handleRejection` tags the branch tip as `rejected/issue-N-attempt-K` (preserving the work), discards the local branch, files a new GitHub issue titled `[follow-up #N] <original title>` labeled `sandcastle` + `priority` whose body carries the reviewer findings + the list of changed files + commit titles, comments on the original linking the follow-up, and closes the original. The next drain cycle picks up the `priority`-labeled follow-up first, combined with auto-ship this prevents the rejected branch from merging until a follow-up passes.
+4. **Reviewer parse error or throw** → the wrapper posts an error comment on the issue, labels it `needs-review`, and leaves the branch in place for the human to inspect.
+
+So `PASS` is required for auto-merge, and `FAIL` actively gates the merge by closing the original issue out and queueing a follow-up. The reviewer's findings remain advisory only in the sense that the wrapper does not modify the rejected diff for you — the next implementer run on the follow-up is what addresses them.
+
+## Optional host content
+
+Two host artifacts deepen the reviewer rubric. Both are optional; the wrapper degrades gracefully when they're absent.
+
+- **`CONTEXT.md`** is the canonical domain glossary. If populated, the reviewer enforces nomenclature binding — every new type / table / file path / UI label in a diff must use the exact names defined in `CONTEXT.md`. If `CONTEXT.md` is still the empty stub, the nomenclature check is silently dropped (per the conditional rubric).
+- **`docs/adr/`** holds architectural decision records. If populated, the reviewer reads the ADR index and flags any diff that contradicts a written decision. If the directory is empty, the ADR-alignment check is silently dropped.
+
+Both files / directories live in the **host project's** working directory, not inside the installed library. The reviewer prompt template eager-loads them from the worktree at review time.
+
+## Configuration knobs that exist today
+
+None, intentionally. The wrapper is opinionated:
+
+- Model is pinned to `claude-opus-4-7`.
+- Label set is fixed (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`).
+- Paths are fixed (`<host-cwd>/.sandcastle/staged/`, `<host-cwd>/.sandcastle/worktrees/`, `<host-cwd>/.sandcastle/logs/`).
+- Idle timeout: 10 minutes per run. Wall-clock cap: 90 minutes per run. One auto-retry on idle / wall-clock timeout.
+- Reviewer budget: 5 minute idle, 30 minute wall-clock.
+
+If you need different values, fork the wrapper or open an issue. Future versions may expose a `sandcastle.config.ts` if users need it; today there is no escape hatch beyond editing source.
+
+## Versioning discipline
+
+This package follows semver with two specific contracts:
+
+- **Principle file changes are minor.** Renaming a rule, adding a new principle file, tightening guidance — the host's `^x.y.z` range picks them up automatically and the next drain enforces them.
+- **Reviewer rubric changes and reviewer JSON output schema changes are major.** Hosts may parse the verdict comment, and the set of review outcomes hosts see is part of the public contract. A new severity level, a renamed category, or a changed field shape bumps the major version. Pin the major version (`~x.y.z` or `x.y.x`) if you depend on a specific rubric shape.
+
+Other public-API changes (CLI subcommand names, the staged-content layout under `dist/content/`, the orchestrator's exit codes) also bump major.
+
+## Limitations
+
+- **Windows worktree teardown.** pnpm's `node_modules/.pnpm/` symlink farm defeats standard recursive deletion on Windows; `git worktree remove` surfaces `Function not implemented`. The wrapper ships `removeWorktreeDir` in `dist/orchestrator/worktree-cleanup.ts` (uses `robocopy /MIR` against an empty source) and runs it before every drain to clean up orphans. Sandcastle's own internal teardown still throws on Windows after a successful agent run — the wrapper recovers commits via `tryRecoverCommits` and labels the run `ok (windows-teardown)`. This is the documented success path on Windows, not a failure mode.
+- **No CI / GitHub Actions variant in v1.** The wrapper runs locally only. Authentication uses your volume-mounted Pro/Max OAuth credentials, which Sandcastle upstream does not first-class — don't deploy this to a cloud VM. See [issue #191 on mattpocock/sandcastle](https://github.com/mattpocock/sandcastle/issues/191) for upstream context.
+- **Sandcastle is pinned to an exact version** in this package's dependencies. Treat upstream upgrades as breaking until you've re-tested the auth path and the worktree lifecycle.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
