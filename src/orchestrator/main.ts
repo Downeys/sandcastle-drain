@@ -58,7 +58,7 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-const REPO_ROOT = resolve(import.meta.dirname, '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 
 // Matches Sandcastle's default image-name convention: `sandcastle:<dir-name>`.
 // `npx sandcastle docker build-image` produces this name without a flag; we

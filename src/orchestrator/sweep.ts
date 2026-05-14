@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { removeWorktreeDir } from './worktree-cleanup.js';
 
-const REPO_ROOT = resolve(import.meta.dirname, '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 
 interface RunResult {
   exitCode: number;

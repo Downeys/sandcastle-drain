@@ -17,7 +17,7 @@ import { execa } from 'execa';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-const REPO_ROOT = resolve(import.meta.dirname, '..');
+const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 
 interface RunResult {
   exitCode: number;
