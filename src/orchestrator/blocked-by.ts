@@ -3,7 +3,7 @@
  * referenced issue numbers. The wrapper uses this to skip dependents of an
  * issue that failed to land in the current drain run.
  *
- * Convention (from docs/agents/issue-tracker.md and existing issue bodies):
+ * Convention (from src/content/agent-docs/issue-tracker.md and existing issue bodies):
  *
  *   ## Blocked by
  *

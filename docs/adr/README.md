@@ -7,7 +7,7 @@ The Sandcastle reviewer reads this directory and flags any diff that contradicts
 ## When to write one
 
 - A material architectural choice (database, language feature, framework, persistence strategy).
-- An exception to a default rule from `docs/principles/` (e.g. a paid managed service over an OSS alternative — see `personal-use-tradeoffs.md`).
+- An exception to a default rule from `src/content/principles/` (e.g. a paid managed service over an OSS alternative — see `personal-use-tradeoffs.md`).
 - A rename of a domain concept in `CONTEXT.md`.
 
 ## Format

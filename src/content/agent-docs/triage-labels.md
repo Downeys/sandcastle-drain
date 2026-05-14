@@ -16,11 +16,11 @@ Used by the `triage` skill's state machine.
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-> **Note on `needs-info`:** the Sandcastle wrapper at `.sandcastle/main.ts` also writes this label automatically whenever a run produces 0 commits — bail-out, timeout, or hard error. See the workflow section below. Same label, two writers (you, manually, and the wrapper).
+> **Note on `needs-info`:** the Sandcastle wrapper at `src/orchestrator/main.ts` also writes this label automatically whenever a run produces 0 commits — bail-out, timeout, or hard error. See the workflow section below. Same label, two writers (you, manually, and the wrapper).
 
 ## Sandcastle workflow labels
 
-Eight labels that exist only for the Sandcastle wrapper at `.sandcastle/main.ts`. `sandcastle`, `blocked`, and `retry` are user-applied; `in-progress`, `needs-review`, `priority`, `oversized`, and `skipped-this-run` are wrapper-managed — don't touch them by hand unless you're recovering from a crashed run.
+Eight labels that exist only for the Sandcastle wrapper at `src/orchestrator/main.ts`. `sandcastle`, `blocked`, and `retry` are user-applied; `in-progress`, `needs-review`, `priority`, `oversized`, and `skipped-this-run` are wrapper-managed — don't touch them by hand unless you're recovering from a crashed run.
 
 | Label          | Applied when                                                                                                                                                                                                                      | Removed when                                                                                                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -94,8 +94,8 @@ When the implementer realises mid-run that an issue's acceptance criteria don't 
 
 The parent issue's foundation commits still flow through the normal `needs-review` / auto-merge / rejection path — splitting does not throw away the work the implementer did finish. Rejection takes precedence: if the reviewer FAILs on the run, the rejection-loop follow-up subsumes any split intent and the split flow is skipped.
 
-The implementer prompt (`.sandcastle/prompt.md`) documents the file shape and rules. `.sandcastle/splits.json` is gitignored so a sloppy `git add -A` doesn't capture it.
+The implementer prompt (`src/prompts/implementer.md`) documents the file shape and rules. `.sandcastle/splits.json` is gitignored so a sloppy `git add -A` doesn't capture it.
 
 ---
 
-Edit any of these tables to match whatever vocabulary you actually use. If you change a label string, also update the wrapper at [`.sandcastle/main.ts`](../../.sandcastle/main.ts) and any references in [`README.md`](../../README.md).
+Edit any of these tables to match whatever vocabulary you actually use. If you change a label string, also update the wrapper at [`src/orchestrator/main.ts`](../../orchestrator/main.ts) and any references in [`README.md`](../../../README.md).

@@ -5,8 +5,8 @@
 On Windows, `sandcastle.run()` throws `error: failed to delete '.sandcastle/worktrees/agent-issue-N': Function not implemented` _after_ the agent has committed. This is the **expected** exit path for any drain that runs `pnpm install`, not a failure mode. The wrapper:
 
 1. Catches the throw, recording `runError`. `result` is undefined.
-2. Reads `git log main..agent/issue-N` (via [`.sandcastle/teardown.ts`](../../.sandcastle/teardown.ts)) to recover the commit list directly from the branch.
-3. Labels the run `ok (windows-teardown)` in [`.sandcastle/status.ts`](../../.sandcastle/status.ts) — a success-tier status that sits alongside `completed` and `partial-work` under needs-review.
+2. Reads `git log main..agent/issue-N` (via [`src/orchestrator/teardown.ts`](../../orchestrator/teardown.ts)) to recover the commit list directly from the branch.
+3. Labels the run `ok (windows-teardown)` in [`src/orchestrator/status.ts`](../../orchestrator/status.ts) — a success-tier status that sits alongside `completed` and `partial-work` under needs-review.
 
 The teardown throw and the wrapper's post-hoc recovery are now considered routine Windows behavior. The status name makes it visible in the per-run GitHub comment so reviewers know what happened, without implying anything went wrong.
 
@@ -14,7 +14,7 @@ The teardown throw and the wrapper's post-hoc recovery are now considered routin
 
 pnpm's `node_modules/.pnpm/` symlink farm defeats Windows recursive deletion (Node's `fs.rm`, `Remove-Item`, `rmdir /s`, and git's own worktree teardown — git surfaces `Function not implemented` from the kernel). Sandcastle's internal `WorktreeManager.remove` runs in the success path and trips this.
 
-The wrapper's own `removeWorktreeDir` mitigation (`robocopy /MIR` in [`.sandcastle/worktree-cleanup.ts`](../../.sandcastle/worktree-cleanup.ts)) handles the same root cause for the _next-run_ orphan cleanup — but it cannot run inside sandcastle's lifecycle, because sandcastle owns its own worktree teardown.
+The wrapper's own `removeWorktreeDir` mitigation (`robocopy /MIR` in [`src/orchestrator/worktree-cleanup.ts`](../../orchestrator/worktree-cleanup.ts)) handles the same root cause for the _next-run_ orphan cleanup — but it cannot run inside sandcastle's lifecycle, because sandcastle owns its own worktree teardown.
 
 ## What we tried (for context)
 
