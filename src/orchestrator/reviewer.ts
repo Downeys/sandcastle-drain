@@ -17,7 +17,8 @@ import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { STAGED_DIR_RELATIVE } from '../stage.js';
+import { detectRubricFlags, STAGED_DIR_RELATIVE } from '../stage.js';
+import { REPO_ROOT } from './prereqs.js';
 import { renderPrompt } from '../render-prompt.js';
 
 export type ReviewerVerdict = 'PASS' | 'FAIL';
@@ -239,10 +240,19 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
   let result: Awaited<ReturnType<typeof run>> | undefined;
   let runError: unknown;
   try {
-    const prompt = await renderPrompt('reviewer', {
-      ISSUE_NUMBER: String(args.issueNumber),
-      BRANCH: args.branch,
-    });
+    const flags = detectRubricFlags(REPO_ROOT);
+    const prompt = await renderPrompt(
+      'reviewer',
+      {
+        ISSUE_NUMBER: String(args.issueNumber),
+        BRANCH: args.branch,
+      },
+      {
+        HAS_CONTEXT_MD: flags.hasContextMd,
+        HAS_ADRS: flags.hasAdrs,
+        HAS_PROJECT_RULES: flags.hasContextMd || flags.hasAdrs,
+      },
+    );
     result = await run({
       agent: claudeCode('claude-opus-4-7'),
       sandbox: docker({
