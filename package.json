@@ -1,12 +1,26 @@
 {
   "name": "sandcastle-drain",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Sandcastle queue wrapper: drains GitHub issues labelled `sandcastle` by running an autonomous Claude Code agent inside a Docker sandbox.",
+  "license": "MIT",
+  "author": "Downeys",
   "type": "module",
   "bin": {
     "sandcastle": "dist/cli.js"
   },
+  "files": [
+    "dist/**/*",
+    "docker/Dockerfile",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "build": "tsc && node scripts/copy-library-assets.mjs",
+    "build": "tsc",
+    "postbuild": "node scripts/copy-library-assets.mjs",
+    "prepublishOnly": "npm run build",
     "drain": "tsx src/cli.ts drain",
     "ship": "tsx src/cli.ts ship",
     "sweep": "tsx src/cli.ts sweep",
@@ -14,10 +28,12 @@
     "lint": "echo \"lint: no linter configured\"",
     "test": "vitest run"
   },
-  "devDependencies": {
+  "dependencies": {
     "@ai-hero/sandcastle": "0.5.7",
+    "execa": "^9.0.0"
+  },
+  "devDependencies": {
     "@types/node": "^22.0.0",
-    "execa": "^9.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
