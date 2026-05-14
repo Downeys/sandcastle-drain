@@ -17,7 +17,7 @@ Issues live as GitHub issues. Use the `gh` CLI. See [docs/agents/issue-tracker.m
 
 ### Triage labels
 
-Five canonical triage-state labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) plus the Sandcastle workflow labels (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`). See [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
+Five canonical triage-state labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`) plus the Sandcastle workflow labels (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`). See [docs/agents/triage-labels.md](docs/agents/triage-labels.md).
 
 ### Reviewer
 

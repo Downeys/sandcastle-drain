@@ -20,7 +20,7 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 ## Sandcastle workflow labels
 
-Seven labels that exist only for the Sandcastle wrapper at `.sandcastle/main.ts`. `sandcastle`, `blocked`, and `retry` are user-applied; `in-progress`, `needs-review`, `priority`, and `oversized` are wrapper-managed — don't touch them by hand unless you're recovering from a crashed run.
+Eight labels that exist only for the Sandcastle wrapper at `.sandcastle/main.ts`. `sandcastle`, `blocked`, and `retry` are user-applied; `in-progress`, `needs-review`, `priority`, `oversized`, and `skipped-this-run` are wrapper-managed — don't touch them by hand unless you're recovering from a crashed run.
 
 | Label          | Applied when                                                                                                                                                                                                                      | Removed when                                                                                                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -31,6 +31,7 @@ Seven labels that exist only for the Sandcastle wrapper at `.sandcastle/main.ts`
 | `retry`        | You apply alongside `sandcastle` to discard a prior agent attempt and re-run.                                                                                                                                                     | Wrapper removes it as part of the retry handling on the next drain.                                                 |
 | `priority`     | Wrapper applies to a rejection-loop follow-up issue (alongside `sandcastle`). The drain serves `priority`-labeled issues before unflagged ones, then by issue number. May also be applied manually to jump-the-queue urgent work. | Manually, after the issue is resolved or no longer urgent.                                                          |
 | `oversized`    | Wrapper applies to a parent issue when its implementer wrote `.sandcastle/splits.json` during the run and the wrapper filed the listed follow-ups. Audit trail signal — see the **split protocol** section below.                 | Manually, when the follow-ups have all landed and the parent can be closed (or kept open as a tracker — your call). |
+| `skipped-this-run` | Wrapper applies when a drain bypassed the issue without running the agent — blocked-by-failed-sibling, an existing `agent/issue-N` branch already in place, or the rate-limit tail of a curtailed drain. The accompanying comment names the reason. | Wrapper removes it at the start of the next outcome block so a successful run never carries a stale breadcrumb.       |
 
 The wrapper also writes the triage-state `needs-info` label as one of the run outcomes — see the state machine below.
 
