@@ -275,6 +275,18 @@ async function deleteBranch(branch: string): Promise<void> {
   await execa('git', ['branch', '-D', branch], { cwd: REPO_ROOT, reject: false });
 }
 
+// A "branch with zero commits ahead of main" carries no work to preserve, so
+// the conservative skip-on-existing-branch path can safely discard it. Used
+// to auto-recover from a prior drain that created the branch but died before
+// committing anything.
+async function branchIsEmpty(branch: string): Promise<boolean> {
+  const result = await execa('git', ['rev-list', '--count', `main..${branch}`], {
+    cwd: REPO_ROOT,
+    reject: false,
+  });
+  return result.exitCode === 0 && result.stdout.trim() === '0';
+}
+
 async function remoteBranchExists(branch: string): Promise<boolean> {
   // Defensive check: if the agent ignored its instructions and pushed, this
   // succeeds. We don't fetch first — just check what's already in
@@ -836,17 +848,25 @@ async function processIssue(
     await removeLabel(issue.number, RETRY_LABEL);
   }
 
-  // (b) Skip-on-existing-branch — preserve possibly-good prior work.
+  // (b) Existing-branch handling — preserve possibly-good prior work, but
+  // auto-discard a branch with zero commits ahead of main (no work to lose).
+  // A prior drain that created the branch and died before its first commit
+  // would otherwise sit stuck until the user applied `retry` manually.
   if (await branchExists(branch)) {
-    console.log(
-      `[wrapper] branch ${branch} already exists; skipping (add 'retry' label to discard and re-run)`,
-    );
-    await markSkipped(
-      issue.number,
-      `Branch \`${branch}\` already exists from a prior run — preserved to avoid losing possibly-good work. Add the \`retry\` label alongside \`sandcastle\` to discard the branch and re-run.`,
-      { removeSandcastle: false },
-    );
-    return { issue: issue.number, status: 'skipped (existing branch)', commitCount: 0 };
+    if (await branchIsEmpty(branch)) {
+      await deleteBranch(branch);
+      console.log(`[wrapper] discarded empty stale branch ${branch} from prior run`);
+    } else {
+      console.log(
+        `[wrapper] branch ${branch} already exists; skipping (add 'retry' label to discard and re-run)`,
+      );
+      await markSkipped(
+        issue.number,
+        `Branch \`${branch}\` already exists from a prior run — preserved to avoid losing possibly-good work. Add the \`retry\` label alongside \`sandcastle\` to discard the branch and re-run.`,
+        { removeSandcastle: false },
+      );
+      return { issue: issue.number, status: 'skipped (existing branch)', commitCount: 0 };
+    }
   }
 
   // (b.5) Clean up any orphaned worktree dir from a prior failed run. Without
