@@ -8,7 +8,7 @@
  * an error — the agent's commits are already on the branch. We read them back
  * here and let the wrapper label the run as `ok (windows-teardown)`.
  *
- * See docs/agents/sandcastle-windows-cleanup.md for background.
+ * See src/content/agent-docs/sandcastle-windows-cleanup.md for background.
  */
 import { execa } from 'execa';
 

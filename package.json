@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "drain": "tsx .sandcastle/main.ts",
-    "ship": "tsx .sandcastle/ship.ts",
-    "sweep": "tsx .sandcastle/sweep.ts"
+    "build": "tsc"
   },
   "devDependencies": {
     "@ai-hero/sandcastle": "0.5.7",

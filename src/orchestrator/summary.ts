@@ -2,7 +2,11 @@ import type { RunStatus } from './status.js';
 
 export interface RunSummary {
   issue: number;
-  status: RunStatus | 'skipped (existing branch)' | 'skipped (rate-limited)';
+  status:
+    | RunStatus
+    | 'skipped (existing branch)'
+    | 'skipped (rate-limited)'
+    | `skipped (blocked by #${number})`;
   branch?: string;
   commitCount: number;
   // undefined when the CI gate didn't run (no commits, or pre-CI failure path).
