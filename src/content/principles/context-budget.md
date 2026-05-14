@@ -9,7 +9,7 @@ Working in the smart zone means: **keep working contexts small, eject when they 
 ## The numbers
 
 ```ts
-// .sandcastle/config.ts (queued as a follow-up issue)
+// src/orchestrator/config.ts (queued as a follow-up issue)
 export const BUDGET = {
   target:  100_000, // info threshold
   ceiling: 150_000, // hard ceiling — split work, do not retry
@@ -31,7 +31,7 @@ If any of those, the issue is probably too big. Split it via `to-issues` before 
 
 ## Mechanical post-run measurement
 
-The wrapper at [.sandcastle/main.ts](../../.sandcastle/main.ts) measures every run via Sandcastle 0.5.7's built-in `IterationUsage`:
+The wrapper at [src/orchestrator/main.ts](../../orchestrator/main.ts) measures every run via Sandcastle 0.5.7's built-in `IterationUsage`:
 
 ```ts
 const total = result.iterations.reduce((sum, it) => {

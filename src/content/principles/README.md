@@ -7,7 +7,7 @@ These principles serve two readers:
 - **Claude Code** — what to enforce when writing TypeScript, when to skip ceremony, how to size Sandcastle issues, what's relaxed because this is personal-use, what is not.
 - **The product code itself** — what shape the codebase must take to remain testable, maintainable, and faithful to the domain.
 
-The product itself — its lifecycle, domain types, workflows — is **out of scope** here. Those decisions land in [CONTEXT.md](../../CONTEXT.md) and [docs/adr/](../adr/) as they crystallise.
+The product itself — its lifecycle, domain types, workflows — is **out of scope** here. Those decisions land in [CONTEXT.md](../../../CONTEXT.md) and [docs/adr/](../../../docs/adr/) as they crystallise.
 
 ## Index
 
@@ -27,7 +27,7 @@ The product itself — its lifecycle, domain types, workflows — is **out of sc
 
 ## How to use this folder
 
-- **Read [CLAUDE.md](../../CLAUDE.md) first** — it links here and to the other agent-skill docs in [docs/agents/](../agents/).
+- **Read [CLAUDE.md](../../../CLAUDE.md) first** — it links here and to the other agent-skill docs in [src/content/agent-docs/](../agent-docs/).
 - **Then read the file relevant to what you're about to do.** Don't load the whole folder unless you're auditing.
 - **If two files contradict, the more specific one wins** (e.g. `claude-code-modes.md` overrides general guidance for autonomous runs).
 - **If a principle conflicts with what you're being asked to do**, surface the conflict in the issue or session — don't silently override.

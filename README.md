@@ -10,13 +10,13 @@ Before the first drain, do the following in the project you've dropped this temp
 
 - **Populate `CONTEXT.md`** with your domain vocabulary. Until you do, the reviewer's nomenclature-binding check is a no-op.
 - **Start writing ADRs in `docs/adr/`** as material decisions land. The reviewer reads them and flags diffs that contradict written decisions.
-- **Add `typecheck`, `lint`, and `test` scripts to your `package.json`** — the wrapper's CI gate (`.sandcastle/ci-gate.ts`) invokes `pnpm typecheck`, `pnpm lint`, and `pnpm test` after every implementer commit, and refuses to ship if any fail. Stub them out (`"echo skip"`) only as a starting point; the gate is only useful once they actually run.
-- **Optionally extend the reviewer rubric.** The genericized rubric in [.sandcastle/reviewer.md](.sandcastle/reviewer.md) Step 3 covers principle-level checks. Project-specific aggregate rules and ADR-grounded checks live in `CONTEXT.md` and `docs/adr/` — the reviewer eager-loads both and applies them automatically. If you want extra hard-coded checks (e.g. "no class extends X"), add them under the relevant category in `reviewer.md`.
-- **The wrapper's Docker image** is named `sandcastle:<your-directory-name>` (derived from `basename(REPO_ROOT)` in [.sandcastle/main.ts](.sandcastle/main.ts)). `npx sandcastle docker build-image` produces this name without a flag.
+- **Add `typecheck`, `lint`, and `test` scripts to your `package.json`** — the wrapper's CI gate (`src/orchestrator/ci-gate.ts`) invokes `pnpm typecheck`, `pnpm lint`, and `pnpm test` after every implementer commit, and refuses to ship if any fail. Stub them out (`"echo skip"`) only as a starting point; the gate is only useful once they actually run.
+- **Optionally extend the reviewer rubric.** The genericized rubric in [src/prompts/reviewer.md](src/prompts/reviewer.md) Step 3 covers principle-level checks. Project-specific aggregate rules and ADR-grounded checks live in `CONTEXT.md` and `docs/adr/` — the reviewer eager-loads both and applies them automatically. If you want extra hard-coded checks (e.g. "no class extends X"), add them under the relevant category in `reviewer.md`.
+- **The wrapper's Docker image** is named `sandcastle:<your-directory-name>` (derived from `basename(REPO_ROOT)` in [src/orchestrator/main.ts](src/orchestrator/main.ts)). `npx sandcastle docker build-image` produces this name without a flag.
 
 ## Contributing
 
-Before making changes, read the development principles in [`docs/principles/`](docs/principles/README.md). Key files:
+Before making changes, read the development principles in [`src/content/principles/`](src/content/principles/README.md). Key files:
 
 - **Language & types** — TypeScript strict mode, Zod at boundaries, branded types, tagged-union `Result<T,E>`
 - **Architecture** — Onion rings (Domain / Application / External / Presentation), lint-enforced inward deps
@@ -44,7 +44,7 @@ Before making changes, read the development principles in [`docs/principles/`](d
    npx sandcastle docker build-image
    ```
 
-   This builds the image declared in [`.sandcastle/Dockerfile`](.sandcastle/Dockerfile) (Node 22 + git + gh + Claude Code CLI + Playwright + Chromium) and tags it `sandcastle:<your-directory-name>`. Re-run it after editing the Dockerfile.
+   This builds the image declared in [`docker/Dockerfile`](docker/Dockerfile) (Node 22 + git + gh + Claude Code CLI + Playwright + Chromium) and tags it `sandcastle:<your-directory-name>`. Re-run it after editing the Dockerfile.
 
 3. **Bootstrap auth into a host directory** (one shot)
 
@@ -118,7 +118,7 @@ Before making changes, read the development principles in [`docs/principles/`](d
 2. **Drain the queue**
 
    ```sh
-   npx tsx .sandcastle/main.ts
+   npm run drain
    ```
 
    The wrapper:
@@ -129,7 +129,7 @@ Before making changes, read the development principles in [`docs/principles/`](d
 
 3. **Review each `agent/issue-*` branch**
 
-   The wrapper transitions issues to one of three terminal states (see [docs/agents/triage-labels.md](docs/agents/triage-labels.md) for the full table):
+   The wrapper transitions issues to one of three terminal states (see [src/content/agent-docs/triage-labels.md](src/content/agent-docs/triage-labels.md) for the full table):
 
    | Outcome from wrapper                                                    | Your move                                                                                                                                                                                                                                                                                                                                                            |
    | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -139,7 +139,7 @@ Before making changes, read the development principles in [`docs/principles/`](d
 
 ## Label vocabulary
 
-Five canonical triage states and the Sandcastle workflow labels — see [docs/agents/triage-labels.md](docs/agents/triage-labels.md). The wrapper-managed transitions live there too. Don't duplicate the table here; two sources of truth will drift.
+Five canonical triage states and the Sandcastle workflow labels — see [src/content/agent-docs/triage-labels.md](src/content/agent-docs/triage-labels.md). The wrapper-managed transitions live there too. Don't duplicate the table here; two sources of truth will drift.
 
 ## Auth caveat
 
@@ -172,7 +172,7 @@ usage limit
 Please try again
 ```
 
-If hit, the loop exits cleanly and the remaining issues are reported as `skipped (rate-limited)` in the summary. Update the [`RATE_LIMIT_MARKERS` constant in `.sandcastle/main.ts`](.sandcastle/main.ts) if you encounter different language in real errors.
+If hit, the loop exits cleanly and the remaining issues are reported as `skipped (rate-limited)` in the summary. Update the [`RATE_LIMIT_MARKERS` constant in `src/orchestrator/main.ts`](src/orchestrator/main.ts) if you encounter different language in real errors.
 
 ## Don't push from inside the sandbox
 
@@ -183,18 +183,22 @@ The agent is instructed not to run `git push` or `gh pr create`. The wrapper doe
 ```
 .
 ├── .claude/
-│   └── skills/         (agent-side skills: tdd, diagnose, zoom-out — committed)
-├── .sandcastle/
-│   ├── Dockerfile      (Node 22 + git + gh + Claude Code CLI + Playwright)
-│   ├── main.ts         (wrapper: queue + per-issue flow + state machine)
-│   ├── prompt.md       (agent prompt; uses {{ISSUE_NUMBER}} / {{ISSUE_TITLE}})
-│   ├── reviewer.md     (advisory reviewer prompt)
-│   └── ...             (ship, sweep, ci-gate, rejection, splits, etc.)
+│   └── skills/             (agent-side skills: tdd, diagnose, zoom-out — committed)
+├── .sandcastle/            (runtime artifacts — gitignored: logs, worktrees, splits.json, .env)
+├── docker/
+│   └── Dockerfile          (Node 22 + git + gh + Claude Code CLI + Playwright)
 ├── docs/
-│   ├── adr/            (architectural decisions — start empty, add as you decide)
-│   ├── agents/         (issue-tracker / triage-labels / windows-cleanup)
-│   └── principles/     (development principles — apply to every commit)
-├── CLAUDE.md           (project guidance for Claude Code)
-├── CONTEXT.md          (canonical domain vocabulary — populate before domain code)
+│   └── adr/                (architectural decisions — start empty, add as you decide)
+├── src/
+│   ├── orchestrator/       (wrapper: main, ship, sweep, ci-gate, reviewer, etc.)
+│   ├── prompts/
+│   │   ├── implementer.md  (agent prompt; uses {{ISSUE_NUMBER}} / {{ISSUE_TITLE}})
+│   │   └── reviewer.md     (advisory reviewer prompt)
+│   └── content/
+│       ├── agent-docs/     (issue-tracker / triage-labels / windows-cleanup)
+│       └── principles/     (development principles — apply to every commit)
+├── CLAUDE.md               (project guidance for Claude Code)
+├── CONTEXT.md              (canonical domain vocabulary — populate before domain code)
+├── tsconfig.json           (NodeNext, rootDir=src/, outDir=dist/)
 └── README.md
 ```

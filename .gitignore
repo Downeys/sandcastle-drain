@@ -1,2 +1,8 @@
 node_modules/
 dist/
+.sandcastle/.env
+.sandcastle/logs/
+.sandcastle/worktrees/
+.sandcastle/sessions/
+.sandcastle/patches/
+.sandcastle/splits.json
