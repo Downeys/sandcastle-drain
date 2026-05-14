@@ -80,10 +80,11 @@ async function main(): Promise<void> {
 
   switch (subcommand) {
     case 'drain':
-      // Stage library content (principles, agent-docs) and prompt templates
-      // into <host-cwd>/.sandcastle/ before the drain begins, so the per-issue
-      // worktrees can copy `.sandcastle/staged/` in via `copyToWorktree` and
-      // `run()` can resolve `.sandcastle/prompt.md` / `reviewer.md`.
+      // Stage library content (principles, agent-docs) into
+      // <host-cwd>/.sandcastle/staged/ before the drain begins, so the
+      // per-issue worktrees can copy it in via `copyToWorktree`. Prompts are
+      // rendered in memory by `src/render-prompt.ts` and never materialize on
+      // the host filesystem.
       await stage(process.cwd());
       await runDrain({ token });
       return;

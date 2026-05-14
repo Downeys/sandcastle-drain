@@ -2,7 +2,7 @@
  * Reviewer sub-agent invocation.
  *
  * After the implementer commits on `agent/issue-N`, the wrapper spawns a
- * separate Sandcastle run with `reviewer.md` as the prompt. The reviewer is
+ * separate Sandcastle run with the rendered reviewer prompt. The reviewer is
  * read-only against the worktree, eager-loads the project's principles, and
  * emits a single fenced JSON block as its final message. This module owns:
  *
@@ -11,16 +11,14 @@
  * - `formatReviewerComment` — render the verdict as a GitHub issue comment
  *
  * The reviewer is advisory: a `FAIL` verdict produces a comment for the human
- * to weigh; it does not gate the merge. See `src/prompts/reviewer.md`.
+ * to weigh; it does not gate the merge. See `src/prompts/reviewer.md.tpl`.
  */
 import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import {
-  REVIEWER_PROMPT_RELATIVE,
-  STAGED_DIR_RELATIVE,
-} from '../stage.js';
+import { STAGED_DIR_RELATIVE } from '../stage.js';
+import { renderPrompt } from '../render-prompt.js';
 
 export type ReviewerVerdict = 'PASS' | 'FAIL';
 export type FindingSeverity = 'high' | 'medium' | 'low';
@@ -241,6 +239,10 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
   let result: Awaited<ReturnType<typeof run>> | undefined;
   let runError: unknown;
   try {
+    const prompt = await renderPrompt('reviewer', {
+      ISSUE_NUMBER: String(args.issueNumber),
+      BRANCH: args.branch,
+    });
     result = await run({
       agent: claudeCode('claude-opus-4-7'),
       sandbox: docker({
@@ -248,11 +250,7 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
         mounts: [{ hostPath: args.hostCredsPath, sandboxPath: args.sandboxCredsPath }],
         env: { GH_TOKEN: args.ghToken },
       }),
-      promptFile: REVIEWER_PROMPT_RELATIVE,
-      promptArgs: {
-        ISSUE_NUMBER: String(args.issueNumber),
-        BRANCH: args.branch,
-      },
+      prompt,
       copyToWorktree: [STAGED_DIR_RELATIVE],
       branchStrategy: { type: 'branch', branch: args.branch },
       idleTimeoutSeconds: args.idleTimeoutSeconds,

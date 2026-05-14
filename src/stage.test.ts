@@ -1,13 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  stage,
-  IMPLEMENTER_PROMPT_RELATIVE,
-  REVIEWER_PROMPT_RELATIVE,
-  STAGED_DIR_RELATIVE,
-} from './stage.js';
+import { stage, STAGED_DIR_RELATIVE } from './stage.js';
 
 let host: string;
 
@@ -20,7 +15,7 @@ afterEach(() => {
 });
 
 describe('stage()', () => {
-  it('copies principles + agent-docs + prompts into <cwd>/.sandcastle/', async () => {
+  it('copies principles + agent-docs into <cwd>/.sandcastle/staged/', async () => {
     const result = await stage(host);
 
     expect(existsSync(join(host, STAGED_DIR_RELATIVE, 'principles', 'README.md'))).toBe(true);
@@ -28,26 +23,14 @@ describe('stage()', () => {
     expect(existsSync(join(host, STAGED_DIR_RELATIVE, 'agent-docs', 'issue-tracker.md'))).toBe(
       true,
     );
-    expect(existsSync(join(host, IMPLEMENTER_PROMPT_RELATIVE))).toBe(true);
-    expect(existsSync(join(host, REVIEWER_PROMPT_RELATIVE))).toBe(true);
 
     expect(result.copyToWorktree).toEqual([STAGED_DIR_RELATIVE]);
-    expect(result.implementerPromptPath).toBe(IMPLEMENTER_PROMPT_RELATIVE);
-    expect(result.reviewerPromptPath).toBe(REVIEWER_PROMPT_RELATIVE);
   });
 
-  it('writes the implementer prompt with the post-staging path references', async () => {
+  it('does not write any prompt files into the host .sandcastle/ dir', async () => {
     await stage(host);
-    const prompt = readFileSync(join(host, IMPLEMENTER_PROMPT_RELATIVE), 'utf8');
-    expect(prompt).toContain('.sandcastle/staged/principles/');
-    expect(prompt).not.toContain('src/content/principles/');
-  });
-
-  it('writes the reviewer prompt with the post-staging path references', async () => {
-    await stage(host);
-    const prompt = readFileSync(join(host, REVIEWER_PROMPT_RELATIVE), 'utf8');
-    expect(prompt).toContain('.sandcastle/staged/principles/');
-    expect(prompt).not.toContain('src/content/principles/');
+    expect(existsSync(join(host, '.sandcastle', 'prompt.md'))).toBe(false);
+    expect(existsSync(join(host, '.sandcastle', 'reviewer.md'))).toBe(false);
   });
 
   it('replaces a stale staged tree on re-stage (library-upgrade scenario)', async () => {

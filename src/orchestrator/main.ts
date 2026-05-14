@@ -17,10 +17,8 @@ import {
   REPO_ROOT,
   SANDBOX_CREDS_PATH,
 } from './prereqs.js';
-import {
-  IMPLEMENTER_PROMPT_RELATIVE,
-  STAGED_DIR_RELATIVE,
-} from '../stage.js';
+import { STAGED_DIR_RELATIVE } from '../stage.js';
+import { renderPrompt } from '../render-prompt.js';
 import {
   containsRateLimit,
   determineRunStatus,
@@ -767,6 +765,11 @@ async function processIssue(
     result = undefined;
     runError = undefined;
     try {
+      const prompt = await renderPrompt('implementer', {
+        ISSUE_NUMBER: String(issue.number),
+        ISSUE_TITLE: issue.title,
+        SIBLING_CONTEXT: siblingContextBlock,
+      });
       result = await run({
         agent: claudeCode('claude-opus-4-7'),
         sandbox: docker({
@@ -778,12 +781,7 @@ async function processIssue(
           // hits its "please run gh auth login" path.
           env: { GH_TOKEN: ghToken },
         }),
-        promptFile: IMPLEMENTER_PROMPT_RELATIVE,
-        promptArgs: {
-          ISSUE_NUMBER: String(issue.number),
-          ISSUE_TITLE: issue.title,
-          SIBLING_CONTEXT: siblingContextBlock,
-        },
+        prompt,
         copyToWorktree: [STAGED_DIR_RELATIVE],
         branchStrategy: { type: 'branch', branch },
         idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,

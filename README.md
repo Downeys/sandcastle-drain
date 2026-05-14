@@ -11,7 +11,7 @@ Before the first drain, do the following in the project you've dropped this temp
 - **Populate `CONTEXT.md`** with your domain vocabulary. Until you do, the reviewer's nomenclature-binding check is a no-op.
 - **Start writing ADRs in `docs/adr/`** as material decisions land. The reviewer reads them and flags diffs that contradict written decisions.
 - **Add `typecheck`, `lint`, and `test` scripts to your `package.json`** — the wrapper's CI gate (`src/orchestrator/ci-gate.ts`) invokes `pnpm typecheck`, `pnpm lint`, and `pnpm test` after every implementer commit, and refuses to ship if any fail. Stub them out (`"echo skip"`) only as a starting point; the gate is only useful once they actually run.
-- **Optionally extend the reviewer rubric.** The genericized rubric in [src/prompts/reviewer.md](src/prompts/reviewer.md) Step 3 covers principle-level checks. Project-specific aggregate rules and ADR-grounded checks live in `CONTEXT.md` and `docs/adr/` — the reviewer eager-loads both and applies them automatically. If you want extra hard-coded checks (e.g. "no class extends X"), add them under the relevant category in `reviewer.md`.
+- **Optionally extend the reviewer rubric.** The genericized rubric in [src/prompts/reviewer.md.tpl](src/prompts/reviewer.md.tpl) Step 3 covers principle-level checks. Project-specific aggregate rules and ADR-grounded checks live in `CONTEXT.md` and `docs/adr/` — the reviewer eager-loads both and applies them automatically. If you want extra hard-coded checks (e.g. "no class extends X"), add them under the relevant category in `reviewer.md.tpl`.
 - **The wrapper's Docker image** is named `sandcastle:<your-directory-name>` (derived from `basename(REPO_ROOT)` in [src/orchestrator/main.ts](src/orchestrator/main.ts)). `npx sandcastle docker build-image` produces this name without a flag.
 
 ## Contributing
@@ -192,8 +192,9 @@ The agent is instructed not to run `git push` or `gh pr create`. The wrapper doe
 ├── src/
 │   ├── orchestrator/       (wrapper: main, ship, sweep, ci-gate, reviewer, etc.)
 │   ├── prompts/
-│   │   ├── implementer.md  (agent prompt; uses {{ISSUE_NUMBER}} / {{ISSUE_TITLE}})
-│   │   └── reviewer.md     (advisory reviewer prompt)
+│   │   ├── implementer.md.tpl  (agent prompt template; {{KEY}} placeholders)
+│   │   └── reviewer.md.tpl     (advisory reviewer prompt template)
+│   ├── render-prompt.ts    (reads .md.tpl, substitutes {{KEY}}, returns string)
 │   └── content/
 │       ├── agent-docs/     (issue-tracker / triage-labels / windows-cleanup)
 │       └── principles/     (development principles — apply to every commit)
