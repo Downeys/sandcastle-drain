@@ -13,6 +13,8 @@
  * `process.cwd()` — the host project where `npx sandcastle` was invoked — not
  * the installed library's directory.
  */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { runDrain } from './orchestrator/main.js';
 import { runAllPrereqs } from './orchestrator/prereqs.js';
 import { ShipError, shipBranch } from './orchestrator/ship.js';
@@ -51,6 +53,22 @@ function parseIssueArg(subcommand: string, arg: string | undefined): number {
   return Number(arg);
 }
 
+function reportUnexpectedError(when: string, err: unknown): never {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error && err.stack ? err.stack : String(err);
+  const logPath = join(process.cwd(), '.sandcastle', 'logs', 'sandcastle-startup.log');
+  let logRef = logPath;
+  try {
+    mkdirSync(join(process.cwd(), '.sandcastle', 'logs'), { recursive: true });
+    writeFileSync(logPath, `${new Date().toISOString()}\n${stack}\n`);
+  } catch {
+    logRef = '(could not write log file)';
+  }
+  console.error(`Sandcastle: unexpected error ${when}: ${message}`);
+  console.error(`See ${logRef} for details.`);
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const [, , subcommand, ...rest] = process.argv;
 
@@ -75,8 +93,16 @@ async function main(): Promise<void> {
 
   // Prereqs run once before any subcommand. The probes are cheap (a few exec
   // calls + a single `gh label list`), and surfacing a missing skill or
-  // expired token up-front beats failing mid-drain.
-  const { token } = await runAllPrereqs();
+  // expired token up-front beats failing mid-drain. Wrap in a try/catch so an
+  // unexpected throw (e.g. `gh` returning unparseable JSON, an EACCES on the
+  // skills check) becomes a clean one-liner with a log file pointer instead
+  // of a raw stack trace.
+  let token: string;
+  try {
+    ({ token } = await runAllPrereqs());
+  } catch (err) {
+    reportUnexpectedError('during startup', err);
+  }
 
   switch (subcommand) {
     case 'drain':
@@ -107,4 +133,10 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+try {
+  await main();
+} catch (err) {
+  // Catches anything that escaped the subcommand handlers (the prereq path
+  // has its own wrapper that adds "during startup" context).
+  reportUnexpectedError('after startup', err);
+}

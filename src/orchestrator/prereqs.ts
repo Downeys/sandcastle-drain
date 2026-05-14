@@ -101,7 +101,7 @@ export async function probeAuth(): Promise<string | null> {
   }
   const result = await execa('claude', ['--version'], { reject: false });
   if (result.exitCode !== 0) {
-    return `\`claude --version\` failed on the host. Make sure the Claude Code CLI is installed and on PATH.`;
+    return `\`claude --version\` failed on the host — the Claude Code CLI is not installed or not on PATH. Install with:\n  npm install -g @anthropic-ai/claude-code`;
   }
   return null;
 }
@@ -115,15 +115,15 @@ export async function probeGhAuth(): Promise<{ token: string } | string> {
   // isn't mountable as a file, so token-via-env is the only viable path.)
   const versionResult = await execa('gh', ['--version'], { reject: false });
   if (versionResult.exitCode !== 0) {
-    return '`gh --version` failed on the host. Install GitHub CLI and run `gh auth login`.';
+    return `\`gh --version\` failed on the host — the GitHub CLI is not installed or not on PATH. Install from:\n  https://cli.github.com/`;
   }
   const tokenResult = await execa('gh', ['auth', 'token'], { reject: false });
   if (tokenResult.exitCode !== 0) {
-    return `\`gh auth token\` failed on the host. Run \`gh auth login\`.\n${tokenResult.stderr}`;
+    return `GitHub CLI is not authenticated on the host. Run:\n  gh auth login`;
   }
   const token = tokenResult.stdout.trim();
   if (!token) {
-    return '`gh auth token` returned empty. Run `gh auth login`.';
+    return `GitHub CLI returned an empty auth token. Run:\n  gh auth login`;
   }
   return { token };
 }
@@ -191,30 +191,28 @@ export async function probeLabels(): Promise<string | null> {
 export async function runAllPrereqs(): Promise<{ token: string }> {
   const missingSkills = probeSkills();
   if (missingSkills.length > 0) {
+    const installArgs = missingSkills.map((s) => `mattpocock/skills/${s}`).join(' ');
     console.error(
-      `[wrapper] FATAL: missing required skills under .claude/skills/: ${missingSkills.join(', ')}`,
-    );
-    console.error(
-      `[wrapper] Install with: npx skills@latest add mattpocock/skills/<name> — and commit them.`,
+      `Sandcastle: missing required skills under .claude/skills/: ${missingSkills.join(', ')}. Install with:\n  npx skills@latest add ${installArgs}`,
     );
     process.exit(1);
   }
 
   const authError = await probeAuth();
   if (authError) {
-    console.error(`[wrapper] FATAL: ${authError}`);
+    console.error(`Sandcastle: ${authError}`);
     process.exit(1);
   }
 
   const ghAuth = await probeGhAuth();
   if (typeof ghAuth === 'string') {
-    console.error(`[wrapper] FATAL: ${ghAuth}`);
+    console.error(`Sandcastle: ${ghAuth}`);
     process.exit(1);
   }
 
   const labelsError = await probeLabels();
   if (labelsError) {
-    console.error(`[wrapper] FATAL: ${labelsError}`);
+    console.error(`Sandcastle: ${labelsError}`);
     process.exit(1);
   }
 
