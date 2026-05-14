@@ -3,7 +3,7 @@
  * once per issue. See README.md for the wrapper design and
  * src/content/agent-docs/triage-labels.md for the label state machine.
  *
- * Run with: node dist/orchestrator/main.js (after `npm run build`)
+ * Run with: npm run drain
  */
 import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
