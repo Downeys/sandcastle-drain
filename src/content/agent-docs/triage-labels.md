@@ -94,7 +94,7 @@ When the implementer realises mid-run that an issue's acceptance criteria don't 
 
 The parent issue's foundation commits still flow through the normal `needs-review` / auto-merge / rejection path — splitting does not throw away the work the implementer did finish. Rejection takes precedence: if the reviewer FAILs on the run, the rejection-loop follow-up subsumes any split intent and the split flow is skipped.
 
-The implementer prompt (`src/prompts/implementer.md`) documents the file shape and rules. `.sandcastle/splits.json` is gitignored so a sloppy `git add -A` doesn't capture it.
+The implementer prompt (`src/prompts/implementer.md.tpl`) documents the file shape and rules. `.sandcastle/splits.json` is gitignored so a sloppy `git add -A` doesn't capture it.
 
 ---
 

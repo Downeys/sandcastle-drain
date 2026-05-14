@@ -14,7 +14,7 @@ These are the non-negotiables Claude Code follows in either mode. Most are resta
 - **Architecture, typing, lint, testing.** Everything in [architecture.md](architecture.md), [language-and-types.md](language-and-types.md), [linting-and-tooling.md](linting-and-tooling.md), [testing.md](testing.md). All of it. No exemptions.
 - **Nomenclature binding.** Every type / table / file path / UI label uses the names defined in [CONTEXT.md](../../../CONTEXT.md). New domain concepts go in CONTEXT.md (via `grill-with-docs`) before code uses them. See [domain-modeling.md](domain-modeling.md).
 - **No `--no-verify`.** Pre-commit hooks run on every commit. If a hook fails, fix the root cause; do not bypass.
-- **No `git push` / `gh pr create` from inside a Sandcastle container.** (Already enforced in [src/prompts/implementer.md](../../prompts/implementer.md) + the wrapper's defensive check; restated here because it's load-bearing.)
+- **No `git push` / `gh pr create` from inside a Sandcastle container.** (Already enforced in [src/prompts/implementer.md.tpl](../../prompts/implementer.md.tpl) + the wrapper's defensive check; restated here because it's load-bearing.)
 - **Personal-use trade-offs apply to both modes.** Don't over-engineer UI/auth/observability; do not skimp on domain correctness, types, or backups. See [personal-use-tradeoffs.md](personal-use-tradeoffs.md).
 
 ## Autonomous-only deltas
@@ -44,4 +44,4 @@ Better to half-deliver an over-scoped issue than to silently break the rules. Th
 ## Reading this set
 
 - Interactive mode: read [README.md](README.md) and the file relevant to what you're doing. Most rules are universal.
-- Autonomous (Sandcastle): the wrapper's prompt at [src/prompts/implementer.md](../../prompts/implementer.md) points here. Always read this file in addition to whatever the issue's work requires.
+- Autonomous (Sandcastle): the wrapper's prompt at [src/prompts/implementer.md.tpl](../../prompts/implementer.md.tpl) points here. Always read this file in addition to whatever the issue's work requires.

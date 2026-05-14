@@ -7,5 +7,3 @@ dist/
 .sandcastle/patches/
 .sandcastle/splits.json
 .sandcastle/staged/
-.sandcastle/prompt.md
-.sandcastle/reviewer.md

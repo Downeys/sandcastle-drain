@@ -75,7 +75,7 @@ Tests are **not** required for:
 - UI cosmetic changes
 - Log-message changes
 
-This inherits verbatim from `src/prompts/implementer.md`'s existing rule. The rationale: forcing tests on type-only changes produces theater tests that pass for the wrong reason and rot when the type changes.
+This inherits verbatim from `src/prompts/implementer.md.tpl`'s existing rule. The rationale: forcing tests on type-only changes produces theater tests that pass for the wrong reason and rot when the type changes.
 
 ## Test file layout
 
