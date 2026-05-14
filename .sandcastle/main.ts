@@ -75,6 +75,7 @@ const BLOCKED_LABEL = 'blocked';
 const RETRY_LABEL = 'retry';
 const NEEDS_REVIEW_LABEL = 'needs-review';
 const NEEDS_INFO_LABEL = 'needs-info';
+const SKIPPED_THIS_RUN_LABEL = 'skipped-this-run';
 
 interface LabelDefinition {
   name: string;
@@ -118,6 +119,11 @@ const LABEL_DEFINITIONS: readonly LabelDefinition[] = [
     name: 'oversized',
     description: 'Sandcastle run exceeded the 150k context ceiling — split via to-issues',
     color: 'CCCCCC',
+  },
+  {
+    name: 'skipped-this-run',
+    description: 'Most recent drain skipped this issue — see latest comment (wrapper-managed)',
+    color: 'BFD4F2',
   },
 ];
 
@@ -232,6 +238,23 @@ async function postComment(issue: number, body: string): Promise<void> {
 
 async function closeIssue(issue: number): Promise<void> {
   await tryGh(['issue', 'close', String(issue)], `close #${issue}`);
+}
+
+// Surfaces a skip decision on the GitHub issue so the user doesn't have to
+// read the orchestrator transcript to discover what happened. Best-effort —
+// every step routes through `tryGh`, so a single failure (label race, network
+// blip) is logged and the drain continues. `removeSandcastle` is opt-in
+// because most skip paths leave the queue label on so the next drain retries.
+async function markSkipped(
+  issue: number,
+  reason: string,
+  opts: { removeSandcastle: boolean },
+): Promise<void> {
+  await postComment(issue, `**Sandcastle drain skipped this issue.** ${reason}`);
+  await addLabel(issue, SKIPPED_THIS_RUN_LABEL);
+  if (opts.removeSandcastle) {
+    await removeLabel(issue, QUEUE_LABEL);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -782,16 +805,21 @@ async function processIssue(
   console.log(`\n[wrapper] === Issue #${issue.number}: ${issue.title} ===`);
 
   // (a.pre) Dependency skip: if this issue's `## Blocked by` section names any
-  // issue that failed to land earlier in *this* drain run, skip silently —
-  // don't touch GitHub state, leave `sandcastle` on so the next drain retries.
-  // Only failures from this run count; stale references to long-closed issues
-  // never enter `failedThisRun`.
+  // issue that failed to land earlier in *this* drain run, mark it skipped on
+  // GitHub and leave `sandcastle` on so the next drain retries once the blocker
+  // is resolved. Only failures from this run count; stale references to long-
+  // closed issues never enter `failedThisRun`.
   if (failedThisRun.size > 0) {
     const blockers = parseBlockedBy(issue.body);
     const failedBlockers = blockers.filter((n) => failedThisRun.has(n));
     if (failedBlockers.length > 0) {
       const first = failedBlockers[0];
       console.log(`[wrapper] skipping #${issue.number} — blocked by failed #${first} this run`);
+      await markSkipped(
+        issue.number,
+        `Blocked by #${first}, which did not land in this drain run. Re-queue after the blocker is resolved.`,
+        { removeSandcastle: false },
+      );
       return {
         issue: issue.number,
         status: `skipped (blocked by #${first})`,
@@ -812,6 +840,11 @@ async function processIssue(
   if (await branchExists(branch)) {
     console.log(
       `[wrapper] branch ${branch} already exists; skipping (add 'retry' label to discard and re-run)`,
+    );
+    await markSkipped(
+      issue.number,
+      `Branch \`${branch}\` already exists from a prior run — preserved to avoid losing possibly-good work. Add the \`retry\` label alongside \`sandcastle\` to discard the branch and re-run.`,
+      { removeSandcastle: false },
     );
     return { issue: issue.number, status: 'skipped (existing branch)', commitCount: 0 };
   }
@@ -1044,6 +1077,7 @@ async function processIssue(
   // (f) Apply outcome labels. Always remove `sandcastle` so the wrapper
   // never silently re-queues the issue — the user re-applies `sandcastle`
   // (with `retry` for fresh-start) when they're ready.
+  await removeLabel(issue.number, SKIPPED_THIS_RUN_LABEL);
   await removeLabel(issue.number, IN_PROGRESS_LABEL);
   await removeLabel(issue.number, QUEUE_LABEL);
   if (autoMerged) {
@@ -1174,9 +1208,16 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
     } catch (err) {
       if (err instanceof RateLimitError) {
         console.error(`[wrapper] Rate limit detected on #${issue.number}; stopping drain.`);
-        // Mark remaining issues as skipped in the summary for visibility.
+        // Mark remaining issues as skipped in the summary for visibility, and
+        // surface the skip on GitHub so the user doesn't have to read the
+        // orchestrator transcript to learn which issues the rate limit ate.
         const remaining = queue.slice(i + 1);
         for (const r of remaining) {
+          await markSkipped(
+            r.number,
+            'Sandcastle hit the model rate limit before reaching this issue. Re-run drain after the limit clears.',
+            { removeSandcastle: false },
+          );
           summaries.push({ issue: r.number, status: 'skipped (rate-limited)', commitCount: 0 });
         }
         break;
