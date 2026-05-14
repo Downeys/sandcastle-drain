@@ -33,9 +33,9 @@ Before reading the diff, load the principles, glossary, and ADR index into conte
    - `.sandcastle/staged/principles/context-budget.md`
    - `.sandcastle/staged/principles/claude-code-modes.md`
    - `.sandcastle/staged/principles/frontend-organization.md`
-2. **Glossary** — `CONTEXT.md` (canonical domain vocabulary; names in code must match)
-3. **ADR index** — list `docs/adr/` and skim the filenames. Read the body of any ADR you need to cite in a finding.
-
+{{#if HAS_CONTEXT_MD}}2. **Glossary** — `CONTEXT.md` (canonical domain vocabulary; names in code must match)
+{{/if}}{{#if HAS_ADRS}}3. **ADR index** — list `docs/adr/` and skim the filenames. Read the body of any ADR you need to cite in a finding.
+{{/if}}
 If `Glob` returns a principle file not listed above, read it too — the README is the source of truth.
 
 ## Step 2 — Read the diff
@@ -51,15 +51,15 @@ If the diff is empty, emit `verdict: "PASS"` with an empty `findings` array and 
 
 ## Step 3 — Apply the rubric
 
-Four categories. For each, the implementer is bound to the listed rules. Look for **violations** in the diff, not in unchanged code.
+For each category below, the implementer is bound to the listed rules. Look for **violations** in the diff, not in unchanged code.
 
-The first three categories are project-agnostic principle checks. The fourth (Glossary & ADR alignment) is where project-specific rules live — read `CONTEXT.md` and the ADRs under `docs/adr/` to discover what they are. If `CONTEXT.md` is still the empty stub or `docs/adr/` is empty, that category becomes a no-op for now; flag nothing under it.
+The first three categories are project-agnostic principle checks.{{#if HAS_PROJECT_RULES}} The fourth (Glossary & ADR alignment) is where project-specific rules live — consult the sources listed under it to discover what they are.{{/if}}
 
 ### Domain integrity
 
 - **Anemic-model ban** — domain entities own their state transitions; getters/setters with logic in services are violations. See `.sandcastle/staged/principles/domain-modeling.md`.
-- **Project-specific aggregate rules** — `CONTEXT.md` and `docs/adr/` may define invariants for specific aggregates (e.g. "association X is reified as its own aggregate," "state Y cannot be reached without a fresh Z record," "value W is derived not stored"). Read them and flag any diff that violates a written rule. Cite the source (`CONTEXT.md` section or ADR number) in the `principle` field.
-
+{{#if HAS_PROJECT_RULES}}- **Project-specific aggregate rules** — the project's documentation may define invariants for specific aggregates (e.g. "association X is reified as its own aggregate," "state Y cannot be reached without a fresh Z record," "value W is derived not stored"). Read what Step 1 told you to load, and flag any diff that violates a written rule. Cite the source in the `principle` field.
+{{/if}}
 ### Test discipline
 
 - **Behavior-required rule** — every commit that introduces testable behavior ships with tests. Type-only, formatting-only, and docs-only changes are exempt. See `.sandcastle/staged/principles/testing.md`.
@@ -72,11 +72,11 @@ The first three categories are project-agnostic principle checks. The fourth (Gl
 - **Pure domain** — the domain layer has no I/O, no `Date.now()`, no `Math.random()` outside parameterized factories. See `.sandcastle/staged/principles/architecture.md`.
 - **Layer-inward dependencies** — `domain` → nothing; `application` → `domain`; `external` → `application`/`domain`; `apps` → all. Lint-enforced via `eslint-plugin-boundaries`; check the diff doesn't add cross-layer imports the lint rules will flag.
 
-### Glossary & ADR alignment
+{{#if HAS_PROJECT_RULES}}### Glossary & ADR alignment
 
-- **CONTEXT.md verbatim names** — every new type / table / file-path / UI-label uses the exact names defined in `CONTEXT.md`. Synonyms are violations. See `.sandcastle/staged/principles/domain-modeling.md` (nomenclature binding). If `CONTEXT.md` is still the empty stub, this check is a no-op until the project populates it.
-- **ADR mapping** — if the change touches a topic covered by an ADR in `docs/adr/`, the change must align with it. If it contradicts an ADR, cite the ADR number in the `principle` field.
-
+{{/if}}{{#if HAS_CONTEXT_MD}}- **CONTEXT.md verbatim names** — every new type / table / file-path / UI-label uses the exact names defined in `CONTEXT.md`. Synonyms are violations. See `.sandcastle/staged/principles/domain-modeling.md` (nomenclature binding).
+{{/if}}{{#if HAS_ADRS}}- **ADR mapping** — if the change touches a topic covered by an ADR in `docs/adr/`, the change must align with it. If it contradicts an ADR, cite the ADR number in the `principle` field.
+{{/if}}
 ## Step 4 — Emit the verdict
 
 Your **final message** must contain exactly one fenced JSON block with this shape, and nothing after it:
