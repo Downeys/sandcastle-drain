@@ -6,12 +6,12 @@ You are working on GitHub issue **#{{ISSUE_NUMBER}} — {{ISSUE_TITLE}}** in thi
 
 ## Principles you must follow
 
-Before starting work, read [src/content/principles/README.md](src/content/principles/README.md) and the principle files relevant to the change. Two are mandatory in autonomous Sandcastle runs regardless of topic:
+Before starting work, read [.sandcastle/staged/principles/README.md](.sandcastle/staged/principles/README.md) and the principle files relevant to the change. Two are mandatory in autonomous Sandcastle runs regardless of topic:
 
-- [src/content/principles/claude-code-modes.md](src/content/principles/claude-code-modes.md) — universal rules + the autonomous-only deltas (token budget, summarize-don't-paste, no-push, no clarification questions, etc.)
-- [src/content/principles/context-budget.md](src/content/principles/context-budget.md) — 100k target / 150k ceiling, summarize-don't-paste detail
+- [.sandcastle/staged/principles/claude-code-modes.md](.sandcastle/staged/principles/claude-code-modes.md) — universal rules + the autonomous-only deltas (token budget, summarize-don't-paste, no-push, no clarification questions, etc.)
+- [.sandcastle/staged/principles/context-budget.md](.sandcastle/staged/principles/context-budget.md) — 100k target / 150k ceiling, summarize-don't-paste detail
 
-If your work touches a layer or topic the issue doesn't make obvious, also read the relevant principle file (e.g. domain code → [src/content/principles/domain-modeling.md](src/content/principles/domain-modeling.md), tests → [src/content/principles/testing.md](src/content/principles/testing.md)).
+If your work touches a layer or topic the issue doesn't make obvious, also read the relevant principle file (e.g. domain code → [.sandcastle/staged/principles/domain-modeling.md](.sandcastle/staged/principles/domain-modeling.md), tests → [.sandcastle/staged/principles/testing.md](.sandcastle/staged/principles/testing.md)).
 
 If the issue asks for something the principles forbid (e.g. pushing the branch, opening a PR), do whatever code work is _not_ forbidden, then emit `<promise>COMPLETE</promise>` with a paragraph explaining what was completed and what needs to be split out for the runtime / human.
 

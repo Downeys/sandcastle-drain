@@ -20,19 +20,19 @@ You are **advisory, not gating**. A `FAIL` verdict produces a comment for the hu
 
 Before reading the diff, load the principles, glossary, and ADR index into context. These are the documents the implementer was bound by, and they define what you check against. Read them in this order:
 
-1. **Principles** — every file in `src/content/principles/`:
-   - `src/content/principles/README.md`
-   - `src/content/principles/architecture.md`
-   - `src/content/principles/language-and-types.md`
-   - `src/content/principles/cqrs.md`
-   - `src/content/principles/domain-modeling.md`
-   - `src/content/principles/testing.md`
-   - `src/content/principles/linting-and-tooling.md`
-   - `src/content/principles/clean-code.md`
-   - `src/content/principles/personal-use-tradeoffs.md`
-   - `src/content/principles/context-budget.md`
-   - `src/content/principles/claude-code-modes.md`
-   - `src/content/principles/frontend-organization.md`
+1. **Principles** — every file in `.sandcastle/staged/principles/`:
+   - `.sandcastle/staged/principles/README.md`
+   - `.sandcastle/staged/principles/architecture.md`
+   - `.sandcastle/staged/principles/language-and-types.md`
+   - `.sandcastle/staged/principles/cqrs.md`
+   - `.sandcastle/staged/principles/domain-modeling.md`
+   - `.sandcastle/staged/principles/testing.md`
+   - `.sandcastle/staged/principles/linting-and-tooling.md`
+   - `.sandcastle/staged/principles/clean-code.md`
+   - `.sandcastle/staged/principles/personal-use-tradeoffs.md`
+   - `.sandcastle/staged/principles/context-budget.md`
+   - `.sandcastle/staged/principles/claude-code-modes.md`
+   - `.sandcastle/staged/principles/frontend-organization.md`
 2. **Glossary** — `CONTEXT.md` (canonical domain vocabulary; names in code must match)
 3. **ADR index** — list `docs/adr/` and skim the filenames. Read the body of any ADR you need to cite in a finding.
 
@@ -57,24 +57,24 @@ The first three categories are project-agnostic principle checks. The fourth (Gl
 
 ### Domain integrity
 
-- **Anemic-model ban** — domain entities own their state transitions; getters/setters with logic in services are violations. See `src/content/principles/domain-modeling.md`.
+- **Anemic-model ban** — domain entities own their state transitions; getters/setters with logic in services are violations. See `.sandcastle/staged/principles/domain-modeling.md`.
 - **Project-specific aggregate rules** — `CONTEXT.md` and `docs/adr/` may define invariants for specific aggregates (e.g. "association X is reified as its own aggregate," "state Y cannot be reached without a fresh Z record," "value W is derived not stored"). Read them and flag any diff that violates a written rule. Cite the source (`CONTEXT.md` section or ADR number) in the `principle` field.
 
 ### Test discipline
 
-- **Behavior-required rule** — every commit that introduces testable behavior ships with tests. Type-only, formatting-only, and docs-only changes are exempt. See `src/content/principles/testing.md`.
-- **Property-based on state machines** — state-transition logic uses `fast-check` properties, not just example tests. See `src/content/principles/testing.md`.
-- **Integration tests hit real infrastructure** — no in-memory mocks for databases or external services. Use `testcontainers` (or equivalent). See `src/content/principles/testing.md`.
+- **Behavior-required rule** — every commit that introduces testable behavior ships with tests. Type-only, formatting-only, and docs-only changes are exempt. See `.sandcastle/staged/principles/testing.md`.
+- **Property-based on state machines** — state-transition logic uses `fast-check` properties, not just example tests. See `.sandcastle/staged/principles/testing.md`.
+- **Integration tests hit real infrastructure** — no in-memory mocks for databases or external services. Use `testcontainers` (or equivalent). See `.sandcastle/staged/principles/testing.md`.
 
 ### Architecture intent
 
-- **Composition over inheritance** — no `extends` of domain classes; behavior composed via functions / strategies. See `src/content/principles/clean-code.md`.
-- **Pure domain** — the domain layer has no I/O, no `Date.now()`, no `Math.random()` outside parameterized factories. See `src/content/principles/architecture.md`.
+- **Composition over inheritance** — no `extends` of domain classes; behavior composed via functions / strategies. See `.sandcastle/staged/principles/clean-code.md`.
+- **Pure domain** — the domain layer has no I/O, no `Date.now()`, no `Math.random()` outside parameterized factories. See `.sandcastle/staged/principles/architecture.md`.
 - **Layer-inward dependencies** — `domain` → nothing; `application` → `domain`; `external` → `application`/`domain`; `apps` → all. Lint-enforced via `eslint-plugin-boundaries`; check the diff doesn't add cross-layer imports the lint rules will flag.
 
 ### Glossary & ADR alignment
 
-- **CONTEXT.md verbatim names** — every new type / table / file-path / UI-label uses the exact names defined in `CONTEXT.md`. Synonyms are violations. See `src/content/principles/domain-modeling.md` (nomenclature binding). If `CONTEXT.md` is still the empty stub, this check is a no-op until the project populates it.
+- **CONTEXT.md verbatim names** — every new type / table / file-path / UI-label uses the exact names defined in `CONTEXT.md`. Synonyms are violations. See `.sandcastle/staged/principles/domain-modeling.md` (nomenclature binding). If `CONTEXT.md` is still the empty stub, this check is a no-op until the project populates it.
 - **ADR mapping** — if the change touches a topic covered by an ADR in `docs/adr/`, the change must align with it. If it contradicts an ADR, cite the ADR number in the `principle` field.
 
 ## Step 4 — Emit the verdict

@@ -17,6 +17,7 @@ import { runDrain } from './orchestrator/main.js';
 import { runAllPrereqs } from './orchestrator/prereqs.js';
 import { ShipError, shipBranch } from './orchestrator/ship.js';
 import { SweepError, sweepBranch } from './orchestrator/sweep.js';
+import { stage } from './stage.js';
 
 const HELP_TEXT = `Usage: sandcastle <command> [args]
 
@@ -79,6 +80,11 @@ async function main(): Promise<void> {
 
   switch (subcommand) {
     case 'drain':
+      // Stage library content (principles, agent-docs) and prompt templates
+      // into <host-cwd>/.sandcastle/ before the drain begins, so the per-issue
+      // worktrees can copy `.sandcastle/staged/` in via `copyToWorktree` and
+      // `run()` can resolve `.sandcastle/prompt.md` / `reviewer.md`.
+      await stage(process.cwd());
       await runDrain({ token });
       return;
     case 'ship':
