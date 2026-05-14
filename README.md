@@ -1,4 +1,4 @@
-# Sandcastle wrapper template
+# Sandcastle drain
 
 A local, attended autonomous-coding setup. Claude Code runs inside [Sandcastle](https://github.com/mattpocock/sandcastle) sandboxes, draining a queue of `sandcastle`-labeled GitHub issues one at a time and committing to per-issue branches that you review and push by hand.
 
@@ -48,7 +48,7 @@ Before making changes, read the development principles in [`docs/principles/`](d
 
 3. **Bootstrap auth into a host directory** (one shot)
 
-   Replace `<your-dir-name>` with the directory this template lives in (e.g. `sandcastle-wrapper-template`, or whatever you renamed it to).
+   Replace `<your-dir-name>` with the directory this template lives in (e.g. `sandcastle-drain`, or whatever you renamed it to).
 
    PowerShell:
 
