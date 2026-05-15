@@ -4,6 +4,13 @@
   "description": "Sandcastle queue wrapper: drains GitHub issues labelled `sandcastle` by running an autonomous Claude Code agent inside a Docker sandbox.",
   "license": "MIT",
   "author": "Downeys",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Downeys/sandcastle-drain.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Downeys/sandcastle-drain/issues"
+  },
   "type": "module",
   "bin": {
     "sandcastle": "dist/cli.js"
