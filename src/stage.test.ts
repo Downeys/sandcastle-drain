@@ -22,15 +22,13 @@ afterEach(() => {
 
 describe('stage()', () => {
   it('copies principles + agent-docs into <cwd>/.sandcastle/staged/', async () => {
-    const result = await stage(host);
+    await stage(host);
 
     expect(existsSync(join(host, STAGED_DIR_RELATIVE, 'principles', 'README.md'))).toBe(true);
     expect(existsSync(join(host, STAGED_DIR_RELATIVE, 'principles', 'testing.md'))).toBe(true);
     expect(existsSync(join(host, STAGED_DIR_RELATIVE, 'agent-docs', 'issue-tracker.md'))).toBe(
       true,
     );
-
-    expect(result.copyToWorktree).toEqual([STAGED_DIR_RELATIVE]);
   });
 
   it('does not write any prompt files into the host .sandcastle/ dir', async () => {

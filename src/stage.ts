@@ -3,11 +3,9 @@
  * so the implementer and reviewer agents — running inside per-issue worktrees —
  * can read the canonical principles and agent-docs from inside the sandbox.
  *
- * Sandcastle copies anything under `<host-cwd>/.sandcastle/staged/` into the
- * worktree at the same relative path before the sandbox starts (via the
- * `copyToWorktree: ['.sandcastle/staged']` option on `run()`). That's how the
- * agent can `Read .sandcastle/staged/principles/testing.md` from inside the
- * worktree.
+ * The orchestrator bind-mounts `<host-cwd>/.sandcastle/staged/` into each
+ * per-issue sandbox at the same relative path (read-only), so the agent can
+ * `Read .sandcastle/staged/principles/testing.md` from inside the worktree.
  *
  * Prompt templates are NOT staged here — they're rendered in memory by
  * `src/render-prompt.ts` and passed to `sandcastle.run()` as `prompt: <string>`.
@@ -28,10 +26,15 @@ import { join } from 'node:path';
 
 export const STAGED_DIR_RELATIVE = '.sandcastle/staged';
 
-export interface StageResult {
-  /** Path(s) to pass to `run()`'s `copyToWorktree` option. Host-relative. */
-  readonly copyToWorktree: readonly string[];
-}
+/**
+ * Absolute POSIX path inside the sandbox where the staged content is mounted.
+ * Sandcastle mounts each worktree at /home/agent/workspace (documented in
+ * @ai-hero/sandcastle's MountConfig). Passing an absolute POSIX sandboxPath
+ * sidesteps sandcastle's platform-native path.resolve, which on Windows
+ * mangles relative sandboxPath values into `C:\home\agent\workspace\...`
+ * and triggers Docker's "too many colons" mount parser.
+ */
+export const STAGED_SANDBOX_PATH = '/home/agent/workspace/.sandcastle/staged';
 
 /**
  * Idempotently writes the library's content into `<cwd>/.sandcastle/staged/`.
@@ -40,7 +43,7 @@ export interface StageResult {
  *
  * Safe to call once per CLI invocation, before the drain loop begins.
  */
-export async function stage(cwd: string): Promise<StageResult> {
+export async function stage(cwd: string): Promise<void> {
   const libraryRoot = import.meta.dirname;
   const libraryContent = join(libraryRoot, 'content');
 
@@ -54,10 +57,6 @@ export async function stage(cwd: string): Promise<StageResult> {
 
   await cp(join(libraryContent, 'principles'), stagedPrinciples, { recursive: true });
   await cp(join(libraryContent, 'agent-docs'), stagedAgentDocs, { recursive: true });
-
-  return {
-    copyToWorktree: [STAGED_DIR_RELATIVE],
-  };
 }
 
 /**
