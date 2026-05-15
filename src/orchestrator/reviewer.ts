@@ -17,7 +17,7 @@ import { run, claudeCode } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { detectRubricFlags, STAGED_DIR_RELATIVE } from '../stage.js';
+import { detectRubricFlags, STAGED_SANDBOX_PATH } from '../stage.js';
 import { REPO_ROOT } from './prereqs.js';
 import { renderPrompt } from '../render-prompt.js';
 
@@ -210,6 +210,7 @@ export interface RunReviewerArgs {
   imageName: string;
   hostCredsPath: string;
   sandboxCredsPath: string;
+  stagedHostPath: string;
   ghToken: string;
   issueNumber: number;
   branch: string;
@@ -257,11 +258,13 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
       agent: claudeCode('claude-opus-4-7'),
       sandbox: docker({
         imageName: args.imageName,
-        mounts: [{ hostPath: args.hostCredsPath, sandboxPath: args.sandboxCredsPath }],
+        mounts: [
+          { hostPath: args.hostCredsPath, sandboxPath: args.sandboxCredsPath },
+          { hostPath: args.stagedHostPath, sandboxPath: STAGED_SANDBOX_PATH, readonly: true },
+        ],
         env: { GH_TOKEN: args.ghToken },
       }),
       prompt,
-      copyToWorktree: [STAGED_DIR_RELATIVE],
       branchStrategy: { type: 'branch', branch: args.branch },
       idleTimeoutSeconds: args.idleTimeoutSeconds,
       signal: AbortSignal.timeout(args.wallClockTimeoutMs),

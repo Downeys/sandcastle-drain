@@ -17,7 +17,7 @@ import {
   REPO_ROOT,
   SANDBOX_CREDS_PATH,
 } from './prereqs.js';
-import { STAGED_DIR_RELATIVE } from '../stage.js';
+import { STAGED_DIR_RELATIVE, STAGED_SANDBOX_PATH } from '../stage.js';
 import { renderPrompt } from '../render-prompt.js';
 import {
   containsRateLimit,
@@ -343,6 +343,7 @@ async function runAndPostReviewer(args: {
       imageName: IMAGE_NAME,
       hostCredsPath: HOST_CREDS_PATH,
       sandboxCredsPath: SANDBOX_CREDS_PATH,
+      stagedHostPath: join(REPO_ROOT, STAGED_DIR_RELATIVE),
       ghToken: args.ghToken,
       issueNumber: args.issueNumber,
       branch: args.branch,
@@ -774,7 +775,14 @@ async function processIssue(
         agent: claudeCode('claude-opus-4-7'),
         sandbox: docker({
           imageName: IMAGE_NAME,
-          mounts: [{ hostPath: HOST_CREDS_PATH, sandboxPath: SANDBOX_CREDS_PATH }],
+          mounts: [
+            { hostPath: HOST_CREDS_PATH, sandboxPath: SANDBOX_CREDS_PATH },
+            {
+              hostPath: join(REPO_ROOT, STAGED_DIR_RELATIVE),
+              sandboxPath: STAGED_SANDBOX_PATH,
+              readonly: true,
+            },
+          ],
           // GH_TOKEN gives the in-sandbox `gh` (used by the prompt's
           // `!gh issue view ...` block, and by any agent-side `gh issue comment`)
           // the same auth as the host. Without it, gh inside the container
@@ -782,7 +790,6 @@ async function processIssue(
           env: { GH_TOKEN: ghToken },
         }),
         prompt,
-        copyToWorktree: [STAGED_DIR_RELATIVE],
         branchStrategy: { type: 'branch', branch },
         idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
         signal: AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS),
