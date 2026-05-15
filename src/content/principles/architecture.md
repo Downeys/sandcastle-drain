@@ -15,7 +15,7 @@ Onion architecture, four rings. Dependencies always point inward. Lint-enforced 
 
 ## Dependency direction is enforced, not aspired
 
-The honor system does not work for autonomous Sandcastle runs. ESLint enforces:
+The honor system does not work for autonomous sandcastle-drain runs. ESLint enforces:
 
 ```jsonc
 "boundaries/element-types": ["error", {

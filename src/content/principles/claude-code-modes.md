@@ -3,7 +3,7 @@
 Two Claude Code modes operate in this repo:
 
 - **Interactive** — you and Claude Code at a terminal/IDE, full conversation, real-time corrections.
-- **Autonomous (Sandcastle)** — Claude Code drains GitHub issues unattended via [src/orchestrator/main.ts](../../orchestrator/main.ts), one issue at a time, no human in the loop.
+- **Autonomous (sandcastle-drain)** — Claude Code drains GitHub issues unattended via [src/orchestrator/main.ts](../../orchestrator/main.ts), one issue at a time, no human in the loop.
 
 Most rules apply to both. A handful of rules tighten in autonomous mode because there is no user to correct mid-run. This file captures both the universal set and the autonomous-only deltas.
 
@@ -19,7 +19,7 @@ These are the non-negotiables Claude Code follows in either mode. Most are resta
 
 ## Autonomous-only deltas
 
-These rules tighten when Claude Code runs unattended via Sandcastle.
+These rules tighten when Claude Code runs unattended via sandcastle-drain.
 
 | Behavior | Interactive | Autonomous |
 |---|---|---|
@@ -44,4 +44,4 @@ Better to half-deliver an over-scoped issue than to silently break the rules. Th
 ## Reading this set
 
 - Interactive mode: read [README.md](README.md) and the file relevant to what you're doing. Most rules are universal.
-- Autonomous (Sandcastle): the wrapper's prompt at [src/prompts/implementer.md.tpl](../../prompts/implementer.md.tpl) points here. Always read this file in addition to whatever the issue's work requires.
+- Autonomous (sandcastle-drain): the wrapper's prompt at [src/prompts/implementer.md.tpl](../../prompts/implementer.md.tpl) points here. Always read this file in addition to whatever the issue's work requires.

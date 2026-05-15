@@ -5,7 +5,7 @@ Vitest for unit + integration. Playwright for the chat-UI E2E flow. `fast-check`
 ## Runner choices
 
 - **Vitest** for unit + integration. TS+ESM-native, fast, watch mode, parallel workers, integrates with `fast-check`.
-- **Playwright Test** for the chat-UI E2E flow. Already implied by the Sandcastle Dockerfile baking in Playwright + Chromium.
+- **Playwright Test** for the chat-UI E2E flow. Already implied by the sandcastle-drain Dockerfile baking in Playwright + Chromium.
 - **`node:test`** is available but not used; Vitest's DX (built-in expect, watch UI, snapshot) wins for the costs of one extra dep.
 
 ## Per-layer coverage policy

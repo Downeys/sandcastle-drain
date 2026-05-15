@@ -2,7 +2,7 @@
 
 Add your project's domain types, aggregates, value objects, and their definitions here.
 
-The Sandcastle reviewer reads this file as the source of truth for nomenclature binding (see [src/content/principles/domain-modeling.md](src/content/principles/domain-modeling.md)) — every type / table / file path / UI label in new code must use these exact names. Synonyms are flagged as findings.
+The sandcastle-drain reviewer reads this file as the source of truth for nomenclature binding (see [src/content/principles/domain-modeling.md](src/content/principles/domain-modeling.md)) — every type / table / file path / UI label in new code must use these exact names. Synonyms are flagged as findings.
 
 Until this file is populated, the nomenclature-binding check is a no-op.
 

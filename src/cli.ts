@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * `sandcastle` CLI — the single entry point users invoke via `npx sandcastle
+ * `sandcastle-drain` CLI — the single entry point users invoke via `npx sandcastle-drain
  * <subcommand>`. Three subcommands route to the existing orchestrators:
  *
- *   sandcastle drain          — drain the GitHub issue queue
- *   sandcastle ship <issue>   — push, PR, squash-merge an `agent/issue-N` branch
- *   sandcastle sweep <issue>  — post-merge worktree/branch cleanup
+ *   sandcastle-drain drain          — drain the GitHub issue queue
+ *   sandcastle-drain ship <issue>   — push, PR, squash-merge an `agent/issue-N` branch
+ *   sandcastle-drain sweep <issue>  — post-merge worktree/branch cleanup
  *
  * Startup probes (`probeSkills`, `probeAuth`, `probeGhAuth`, `probeLabels`) run
  * once up-front regardless of subcommand so the user gets an actionable error
  * before any work begins. Paths inside the orchestrators resolve relative to
- * `process.cwd()` — the host project where `npx sandcastle` was invoked — not
+ * `process.cwd()` — the host project where `npx sandcastle-drain` was invoked — not
  * the installed library's directory.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -21,7 +21,7 @@ import { ShipError, shipBranch } from './orchestrator/ship.js';
 import { SweepError, sweepBranch } from './orchestrator/sweep.js';
 import { stage } from './stage.js';
 
-const HELP_TEXT = `Usage: sandcastle <command> [args]
+const HELP_TEXT = `Usage: sandcastle-drain <command> [args]
 
 Commands:
   drain               Drain the queue of \`sandcastle\`-labeled GitHub issues
@@ -48,7 +48,7 @@ function fail(msg: string, opts: { showHelp?: boolean } = {}): never {
 
 function parseIssueArg(subcommand: string, arg: string | undefined): number {
   if (!arg || !/^\d+$/.test(arg)) {
-    fail(`Usage: sandcastle ${subcommand} <issue-number>  (e.g. \`sandcastle ${subcommand} 3\`)`);
+    fail(`Usage: sandcastle-drain ${subcommand} <issue-number>  (e.g. \`sandcastle-drain ${subcommand} 3\`)`);
   }
   return Number(arg);
 }
@@ -56,15 +56,15 @@ function parseIssueArg(subcommand: string, arg: string | undefined): number {
 function reportUnexpectedError(when: string, err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error && err.stack ? err.stack : String(err);
-  const logPath = join(process.cwd(), '.sandcastle', 'logs', 'sandcastle-startup.log');
+  const logPath = join(process.cwd(), '.sandcastle-drain', 'logs', 'sandcastle-startup.log');
   let logRef = logPath;
   try {
-    mkdirSync(join(process.cwd(), '.sandcastle', 'logs'), { recursive: true });
+    mkdirSync(join(process.cwd(), '.sandcastle-drain', 'logs'), { recursive: true });
     writeFileSync(logPath, `${new Date().toISOString()}\n${stack}\n`);
   } catch {
     logRef = '(could not write log file)';
   }
-  console.error(`Sandcastle: unexpected error ${when}: ${message}`);
+  console.error(`sandcastle-drain: unexpected error ${when}: ${message}`);
   console.error(`See ${logRef} for details.`);
   process.exit(1);
 }
@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   switch (subcommand) {
     case 'drain':
       // Stage library content (principles, agent-docs) into
-      // <host-cwd>/.sandcastle/staged/ before the drain begins, so the
+      // <host-cwd>/.sandcastle-drain/staged/ before the drain begins, so the
       // per-issue worktrees can copy it in via `copyToWorktree`. Prompts are
       // rendered in memory by `src/render-prompt.ts` and never materialize on
       // the host filesystem.

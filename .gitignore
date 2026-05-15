@@ -1,9 +1,9 @@
 node_modules/
 dist/
-.sandcastle/.env
-.sandcastle/logs/
-.sandcastle/worktrees/
-.sandcastle/sessions/
-.sandcastle/patches/
-.sandcastle/splits.json
-.sandcastle/staged/
+.sandcastle-drain/.env
+.sandcastle-drain/logs/
+.sandcastle-drain/worktrees/
+.sandcastle-drain/sessions/
+.sandcastle-drain/patches/
+.sandcastle-drain/splits.json
+.sandcastle-drain/staged/

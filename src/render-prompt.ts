@@ -1,7 +1,7 @@
 /**
  * Renders the bundled implementer / reviewer prompt templates with
  * caller-supplied `{{KEY}}` substitutions. The orchestrator passes the result
- * as `prompt: <string>` to `sandcastle.run()` so the host's `.sandcastle/`
+ * as `prompt: <string>` to `sandcastle.run()` so the host's `.sandcastle-drain/`
  * directory never needs to materialize a `prompt.md` / `reviewer.md` file.
  *
  * Templates live next to the compiled output as `dist/prompts/*.md.tpl` (the

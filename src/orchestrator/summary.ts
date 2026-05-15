@@ -19,7 +19,7 @@ export interface RunSummary {
   // discarded the branch, and filed a priority follow-up issue. Mutually
   // exclusive with autoMerged.
   rejected?: boolean;
-  // Set when the implementer wrote `.sandcastle/splits.json` and the wrapper
+  // Set when the implementer wrote `.sandcastle-drain/splits.json` and the wrapper
   // filed each entry as a `sandcastle` + `priority` follow-up. `count` is the
   // number of follow-ups filed (may be < requested if some gh create calls
   // failed). Independent of autoMerged / rejected — splits can co-exist with

@@ -1,10 +1,10 @@
 # Development principles
 
-The rules Claude Code (interactive + Sandcastle-autonomous) follows when building code in this repo, plus the architectural constraints those rules force the _product code_ to take.
+The rules Claude Code (interactive + sandcastle-drain-autonomous) follows when building code in this repo, plus the architectural constraints those rules force the _product code_ to take.
 
 These principles serve two readers:
 
-- **Claude Code** — what to enforce when writing TypeScript, when to skip ceremony, how to size Sandcastle issues, what's relaxed because this is personal-use, what is not.
+- **Claude Code** — what to enforce when writing TypeScript, when to skip ceremony, how to size sandcastle-drain issues, what's relaxed because this is personal-use, what is not.
 - **The product code itself** — what shape the codebase must take to remain testable, maintainable, and faithful to the domain.
 
 The product itself — its lifecycle, domain types, workflows — is **out of scope** here. Those decisions land in [CONTEXT.md](../../../CONTEXT.md) and [docs/adr/](../../../docs/adr/) as they crystallise.
@@ -22,8 +22,8 @@ The product itself — its lifecycle, domain types, workflows — is **out of sc
 | [linting-and-tooling.md](linting-and-tooling.md)       | Dev              | ESLint + plugins, three custom rules, Husky + lint-staged + pre-commit, no `--no-verify` ever                                                                              |
 | [clean-code.md](clean-code.md)                         | Dev              | DRY / YAGNI / KISS, small focused functions with lint-enforced max-depth and complexity, composition over inheritance, pure functions and immutability in the domain layer |
 | [personal-use-tradeoffs.md](personal-use-tradeoffs.md) | Dev + Product    | What's relaxed (UI, auth, ops), what's not (domain correctness, types, backups), tech-selection rule with paid-service ADR requirement                                     |
-| [context-budget.md](context-budget.md)                 | Dev (Sandcastle) | 100k target / 150k ceiling, BUDGET config location, mechanical post-run measurement, summarize-don't-paste                                                                 |
-| [claude-code-modes.md](claude-code-modes.md)           | Dev              | Universal rules + Sandcastle-only deltas (token budget, summarize-don't-paste, no-push, no-clarification)                                                                  |
+| [context-budget.md](context-budget.md)                 | Dev (sandcastle-drain) | 100k target / 150k ceiling, BUDGET config location, mechanical post-run measurement, summarize-don't-paste                                                                 |
+| [claude-code-modes.md](claude-code-modes.md)           | Dev              | Universal rules + sandcastle-drain-only deltas (token budget, summarize-don't-paste, no-push, no-clarification)                                                                  |
 
 ## How to use this folder
 
@@ -35,5 +35,5 @@ The product itself — its lifecycle, domain types, workflows — is **out of sc
 ## What's deliberately _not_ here
 
 - The product's lifecycle, workflow, domain types — those go in CONTEXT.md and ADRs once decided.
-- Tooling enforcement (lint config, tsconfig flags, pre-commit hook wiring) — those are queued as separate Sandcastle issues; principles describe the rules, follow-up issues implement them.
+- Tooling enforcement (lint config, tsconfig flags, pre-commit hook wiring) — those are queued as separate sandcastle-drain issues; principles describe the rules, follow-up issues implement them.
 - Scaffolded package folders — created when the first product issue needs them.

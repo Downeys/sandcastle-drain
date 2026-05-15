@@ -200,11 +200,11 @@ export async function runCiGate(args: {
 }): Promise<CiGateResult> {
   const { issue, branch, repoRoot, worktreePath } = args;
 
-  const logsDir = join(repoRoot, '.sandcastle', 'logs');
+  const logsDir = join(repoRoot, '.sandcastle-drain', 'logs');
   await mkdir(logsDir, { recursive: true });
   const logPath = join(logsDir, `issue-${issue}-ci.log`);
 
-  const ciGateRoot = join(repoRoot, '.sandcastle', 'ci-gate');
+  const ciGateRoot = join(repoRoot, '.sandcastle-drain', 'ci-gate');
   const { dir, createdTempWorktree } = await prepareCiWorktree({
     branch,
     repoRoot,

@@ -4,8 +4,8 @@
  * merge auto-closes the issue regardless of what the agent's commit messages
  * looked like.
  *
- * Invoked by `src/cli.ts` as `sandcastle ship <issue>`. After this completes
- * successfully, the user runs `sandcastle sweep <issue>` to clean up the
+ * Invoked by `src/cli.ts` as `sandcastle-drain ship <issue>`. After this completes
+ * successfully, the user runs `sandcastle-drain sweep <issue>` to clean up the
  * local worktree, branch, and pull main. The drain orchestrator (`main.ts`)
  * also calls `shipBranch` inline when the CI gate and reviewer both pass.
  */
@@ -56,7 +56,7 @@ export async function shipBranch(args: ShipBranchArgs): Promise<ShipBranchResult
   const branchCheck = await run('git', ['rev-parse', '--verify', branch], { reject: false });
   if (branchCheck.exitCode !== 0) {
     throw new ShipError(
-      `Branch \`${branch}\` not found locally. Did you already ship this issue, or has \`sandcastle drain\` run yet?`,
+      `Branch \`${branch}\` not found locally. Did you already ship this issue, or has \`sandcastle-drain drain\` run yet?`,
     );
   }
 
@@ -69,7 +69,7 @@ export async function shipBranch(args: ShipBranchArgs): Promise<ShipBranchResult
   // Explicit `Closes #N` so the squash-merge auto-closes the issue regardless of
   // what's in commit messages — `gh pr create --fill` only reads the first
   // commit's body, which is fragile when an agent makes multiple commits.
-  const body = `Closes #${args.issue}\n\n_Created via \`sandcastle ship ${args.issue}\`._`;
+  const body = `Closes #${args.issue}\n\n_Created via \`sandcastle-drain ship ${args.issue}\`._`;
 
   console.log(`[ship] Creating PR for ${branch}...`);
   const prCreate = await run(
@@ -110,7 +110,7 @@ export async function shipBranch(args: ShipBranchArgs): Promise<ShipBranchResult
   await run('git', ['push', 'origin', '--delete', branch]);
 
   console.log(
-    `[ship] Done. Run \`sandcastle sweep ${args.issue}\` to clean up the local worktree and branch.`,
+    `[ship] Done. Run \`sandcastle-drain sweep ${args.issue}\` to clean up the local worktree and branch.`,
   );
   return { branch, prUrl };
 }

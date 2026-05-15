@@ -1,7 +1,7 @@
 {
   "name": "sandcastle-drain",
   "version": "0.1.0",
-  "description": "Sandcastle queue wrapper: drains GitHub issues labelled `sandcastle` by running an autonomous Claude Code agent inside a Docker sandbox.",
+  "description": "Queue wrapper around @ai-hero/sandcastle: drains GitHub issues labelled `sandcastle` by running an autonomous Claude Code agent inside a Docker sandbox.",
   "license": "MIT",
   "author": "Downeys",
   "repository": {
@@ -13,7 +13,7 @@
   },
   "type": "module",
   "bin": {
-    "sandcastle": "dist/cli.js"
+    "sandcastle-drain": "dist/cli.js"
   },
   "files": [
     "dist/**/*",

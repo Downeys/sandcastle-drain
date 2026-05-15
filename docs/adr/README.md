@@ -2,7 +2,7 @@
 
 Each ADR lives in its own file named `NNNN-short-title.md`. See https://adr.github.io for format guidance.
 
-The Sandcastle reviewer reads this directory and flags any diff that contradicts a written ADR.
+The sandcastle-drain reviewer reads this directory and flags any diff that contradicts a written ADR.
 
 ## When to write one
 

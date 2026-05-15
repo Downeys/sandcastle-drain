@@ -106,7 +106,7 @@ export function buildFollowUpBody(args: FollowUpIssueBodyArgs): string {
 
   const lines: string[] = [];
   lines.push(`Follow-up to #${originalIssueNumber} — attempt ${attempt - 1} was rejected by the`);
-  lines.push(`Sandcastle reviewer. Address the findings below and try again.`);
+  lines.push(`sandcastle-drain reviewer. Address the findings below and try again.`);
   lines.push('');
   lines.push(`## Reviewer summary`);
   lines.push('');

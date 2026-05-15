@@ -4,7 +4,7 @@
  * When an implementer realises mid-run that the issue won't fit under the
  * 150k context ceiling, the right move is to commit what does fit, write the
  * remaining acceptance criteria as a list of follow-up issues into
- * `.sandcastle/splits.json` in the worktree, then emit `<promise>COMPLETE</promise>`.
+ * `.sandcastle-drain/splits.json` in the worktree, then emit `<promise>COMPLETE</promise>`.
  *
  * The wrapper picks up the file after the run, files each entry as a new
  * `sandcastle` + `priority` issue (so it jumps the queue on the next refetch,
@@ -21,7 +21,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export const SPLITS_FILE_RELATIVE_PATH = '.sandcastle/splits.json';
+export const SPLITS_FILE_RELATIVE_PATH = '.sandcastle-drain/splits.json';
 export const OVERSIZED_LABEL = 'oversized';
 export const MAX_SPLITS = 10;
 export const MAX_TITLE_LENGTH = 256;
@@ -57,7 +57,7 @@ function parseSplit(raw: unknown, index: number): Split | string {
 }
 
 /**
- * Validates the raw JSON read from `.sandcastle/splits.json`. The shape is
+ * Validates the raw JSON read from `.sandcastle-drain/splits.json`. The shape is
  * intentionally tiny: an array of `{ title, body }`. Body is markdown the
  * implementer wrote — we never massage it on the way through.
  */
@@ -128,11 +128,11 @@ export function buildOriginalIssueSplitComment(args: {
 }): string {
   const lines: string[] = [];
   lines.push(
-    `**Sandcastle implementer split this issue into ${args.splits.length} follow-up${args.splits.length === 1 ? '' : 's'}.**`,
+    `**sandcastle-drain implementer split this issue into ${args.splits.length} follow-up${args.splits.length === 1 ? '' : 's'}.**`,
   );
   lines.push('');
   lines.push(
-    `The implementer wrote \`.sandcastle/splits.json\` during the run, signalling that the remaining acceptance criteria could not fit under the 150k context ceiling. Each follow-up has been filed with the \`sandcastle\` + \`priority\` labels and will run on the next drain.`,
+    `The implementer wrote \`.sandcastle-drain/splits.json\` during the run, signalling that the remaining acceptance criteria could not fit under the 150k context ceiling. Each follow-up has been filed with the \`sandcastle\` + \`priority\` labels and will run on the next drain.`,
   );
   lines.push('');
   for (const split of args.splits) {
@@ -152,7 +152,7 @@ export function buildOriginalIssueSplitComment(args: {
  */
 export function buildSplitErrorComment(args: { reason: string }): string {
   const lines: string[] = [];
-  lines.push(`**Sandcastle implementer wrote \`.sandcastle/splits.json\` but it was malformed.**`);
+  lines.push(`**sandcastle-drain implementer wrote \`.sandcastle-drain/splits.json\` but it was malformed.**`);
   lines.push('');
   lines.push(`Parse error: \`${args.reason}\``);
   lines.push('');

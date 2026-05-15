@@ -32,27 +32,27 @@ The wrapper relies on the host machine to supply these. None of them are install
 npm install --save-dev sandcastle-drain
 ```
 
-The package exposes a single binary, `sandcastle`. Invoke it via `npx`:
+The package exposes a single binary, `sandcastle-drain`. Invoke it via `npx`:
 
 ```sh
-npx sandcastle <subcommand>
+npx sandcastle-drain <subcommand>
 ```
 
 ## Usage
 
 | Command                 | What it does                                                                                            |
 | ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| `npx sandcastle drain`  | Process every open issue labeled `sandcastle`. One agent run per issue, on a branch `agent/issue-N`.    |
-| `npx sandcastle ship N` | Push `agent/issue-N`, open a PR with `Closes #N`, squash-merge it, and delete the remote branch.       |
-| `npx sandcastle sweep N`| Post-merge cleanup: pull main, remove the worktree directory, prune git's worktree metadata, delete the local branch. Refuses to run unless a MERGED PR exists for the branch. |
+| `npx sandcastle-drain drain`  | Process every open issue labeled `sandcastle`. One agent run per issue, on a branch `agent/issue-N`.    |
+| `npx sandcastle-drain ship N` | Push `agent/issue-N`, open a PR with `Closes #N`, squash-merge it, and delete the remote branch.       |
+| `npx sandcastle-drain sweep N`| Post-merge cleanup: pull main, remove the worktree directory, prune git's worktree metadata, delete the local branch. Refuses to run unless a MERGED PR exists for the branch. |
 
-All paths resolve relative to the host working directory where you ran `npx sandcastle`. The wrapper writes runtime artifacts to `<host-cwd>/.sandcastle/` (logs, worktrees, staged content, optional `splits.json`).
+All paths resolve relative to the host working directory where you ran `npx sandcastle-drain`. The wrapper writes runtime artifacts to `<host-cwd>/.sandcastle-drain/` (logs, worktrees, staged content, optional `splits.json`).
 
 ## What the wrapper enforces
 
 Two layers run on every implementer commit: a fixed set of **development principles** the implementer must follow, and a four-category **reviewer rubric** that audits the diff after the commits land.
 
-The principle files ship inside the package at `dist/content/principles/` and are staged into `<host-cwd>/.sandcastle/staged/principles/` before each drain so the agent can read them from inside the sandbox. Twelve files cover language and types, architecture (onion layers), CQRS, frontend organization, domain modeling, testing, linting and tooling, clean code, personal-use trade-offs, context-budget discipline (100k target / 150k ceiling), Claude Code interactive-vs-autonomous mode deltas, and a README that indexes the rest. Both the implementer and the reviewer eager-load the relevant files.
+The principle files ship inside the package at `dist/content/principles/` and are staged into `<host-cwd>/.sandcastle-drain/staged/principles/` before each drain so the agent can read them from inside the sandbox. Twelve files cover language and types, architecture (onion layers), CQRS, frontend organization, domain modeling, testing, linting and tooling, clean code, personal-use trade-offs, context-budget discipline (100k target / 150k ceiling), Claude Code interactive-vs-autonomous mode deltas, and a README that indexes the rest. Both the implementer and the reviewer eager-load the relevant files.
 
 The reviewer rubric is four categories. **Domain integrity** flags anemic-model violations and any aggregate-specific invariants the host has written into `CONTEXT.md` or an ADR. **Test discipline** enforces the behavior-required test rule (every commit that introduces testable behavior ships with tests), property-based testing on state machines, and integration tests that hit real infrastructure rather than mocks. **Architecture intent** rejects inheritance of domain classes, impurity in the domain layer, and cross-layer imports that violate the onion direction. **Glossary & ADR alignment** checks that new names match `CONTEXT.md` verbatim and that diffs don't contradict any ADR under `docs/adr/`.
 
@@ -82,7 +82,7 @@ None, intentionally. The wrapper is opinionated:
 
 - Model is pinned to `claude-opus-4-7`.
 - Label set is fixed (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`).
-- Paths are fixed (`<host-cwd>/.sandcastle/staged/`, `<host-cwd>/.sandcastle/worktrees/`, `<host-cwd>/.sandcastle/logs/`).
+- Paths are fixed (`<host-cwd>/.sandcastle-drain/staged/`, `<host-cwd>/.sandcastle-drain/worktrees/`, `<host-cwd>/.sandcastle-drain/logs/`).
 - Idle timeout: 10 minutes per run. Wall-clock cap: 90 minutes per run. One auto-retry on idle / wall-clock timeout.
 - Reviewer budget: 5 minute idle, 30 minute wall-clock.
 

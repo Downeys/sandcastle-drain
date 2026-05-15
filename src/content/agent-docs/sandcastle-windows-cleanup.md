@@ -2,7 +2,7 @@
 
 ## Behavior
 
-On Windows, `sandcastle.run()` throws `error: failed to delete '.sandcastle/worktrees/agent-issue-N': Function not implemented` _after_ the agent has committed. This is the **expected** exit path for any drain that runs `pnpm install`, not a failure mode. The wrapper:
+On Windows, `sandcastle.run()` throws `error: failed to delete '.sandcastle-drain/worktrees/agent-issue-N': Function not implemented` _after_ the agent has committed. This is the **expected** exit path for any drain that runs `pnpm install`, not a failure mode. The wrapper:
 
 1. Catches the throw, recording `runError`. `result` is undefined.
 2. Reads `git log main..agent/issue-N` (via [`src/orchestrator/teardown.ts`](../../orchestrator/teardown.ts)) to recover the commit list directly from the branch.

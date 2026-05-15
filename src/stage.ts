@@ -1,11 +1,11 @@
 /**
- * Stages library-bundled markdown into the host project's `.sandcastle/staged/`
+ * Stages library-bundled markdown into the host project's `.sandcastle-drain/staged/`
  * so the implementer and reviewer agents — running inside per-issue worktrees —
  * can read the canonical principles and agent-docs from inside the sandbox.
  *
- * The orchestrator bind-mounts `<host-cwd>/.sandcastle/staged/` into each
+ * The orchestrator bind-mounts `<host-cwd>/.sandcastle-drain/staged/` into each
  * per-issue sandbox at the same relative path (read-only), so the agent can
- * `Read .sandcastle/staged/principles/testing.md` from inside the worktree.
+ * `Read .sandcastle-drain/staged/principles/testing.md` from inside the worktree.
  *
  * Prompt templates are NOT staged here — they're rendered in memory by
  * `src/render-prompt.ts` and passed to `sandcastle.run()` as `prompt: <string>`.
@@ -24,7 +24,7 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const STAGED_DIR_RELATIVE = '.sandcastle/staged';
+export const STAGED_DIR_RELATIVE = '.sandcastle-drain/staged';
 
 /**
  * Absolute POSIX path inside the sandbox where the staged content is mounted.
@@ -34,10 +34,10 @@ export const STAGED_DIR_RELATIVE = '.sandcastle/staged';
  * mangles relative sandboxPath values into `C:\home\agent\workspace\...`
  * and triggers Docker's "too many colons" mount parser.
  */
-export const STAGED_SANDBOX_PATH = '/home/agent/workspace/.sandcastle/staged';
+export const STAGED_SANDBOX_PATH = '/home/agent/workspace/.sandcastle-drain/staged';
 
 /**
- * Idempotently writes the library's content into `<cwd>/.sandcastle/staged/`.
+ * Idempotently writes the library's content into `<cwd>/.sandcastle-drain/staged/`.
  * Removes any prior staged tree first so a library upgrade is reflected
  * immediately rather than merged into stale files.
  *

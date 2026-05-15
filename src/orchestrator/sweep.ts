@@ -3,7 +3,7 @@
  * worktree directory (Windows-safe via the shared helper), prunes git's
  * worktree metadata, and deletes the local branch.
  *
- * Invoked by `src/cli.ts` as `sandcastle sweep <issue>`. Refuses to run unless
+ * Invoked by `src/cli.ts` as `sandcastle-drain sweep <issue>`. Refuses to run unless
  * a MERGED PR exists for the branch — sweep is post-merge cleanup, not a way
  * to discard in-flight work. To discard a still-open branch intentionally,
  * use `git worktree remove` and `git branch -D` directly. The drain
@@ -74,13 +74,13 @@ export interface SweepBranchResult {
  */
 export async function sweepBranch(args: SweepBranchArgs): Promise<SweepBranchResult> {
   const branch = `agent/issue-${args.issue}`;
-  const worktreePath = resolve(REPO_ROOT, '.sandcastle', 'worktrees', `agent-issue-${args.issue}`);
+  const worktreePath = resolve(REPO_ROOT, '.sandcastle-drain', 'worktrees', `agent-issue-${args.issue}`);
 
   console.log(`[sweep] Checking that PR for ${branch} is merged...`);
   const merged = await findMergedPr(branch);
   if (!merged) {
     throw new SweepError(
-      `No MERGED PR found for ${branch}. Sweep is post-merge cleanup only — run \`sandcastle ship ${args.issue}\` first, or remove the worktree manually if you want to discard the branch without merging.`,
+      `No MERGED PR found for ${branch}. Sweep is post-merge cleanup only — run \`sandcastle-drain ship ${args.issue}\` first, or remove the worktree manually if you want to discard the branch without merging.`,
     );
   }
   console.log(`[sweep] Found merged PR: ${merged.url}`);

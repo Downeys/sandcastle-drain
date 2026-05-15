@@ -6,7 +6,7 @@ ESLint + typescript-eslint + Prettier + custom local rules. Pre-commit hook via 
 
 Three reasons we picked ESLint:
 
-1. **`eslint-plugin-boundaries` is non-negotiable.** Our entire onion architecture (see [architecture.md](architecture.md)) relies on a real boundary-enforcement plugin. Biome does not have an equivalent. Without lint-enforced boundaries, the layers become honor-system, and we already decided we cannot afford honor-system on architecture rules in autonomous Sandcastle runs.
+1. **`eslint-plugin-boundaries` is non-negotiable.** Our entire onion architecture (see [architecture.md](architecture.md)) relies on a real boundary-enforcement plugin. Biome does not have an equivalent. Without lint-enforced boundaries, the layers become honor-system, and we already decided we cannot afford honor-system on architecture rules in autonomous sandcastle-drain runs.
 2. **Custom rules are easier in ESLint.** We need three (`no-throw-in-domain`, `no-anemic-aggregate`, `domain-names-match-context-md`). In ESLint these are 50–150 lines of TypeScript each; in Biome they require GritQL or Rust.
 3. **Speed isn't the bottleneck on a personal project.** Biome's main pitch is speed at scale. With ~50–100 source files, ESLint's 10–30s runs are fine. `oxlint` can be added as a fast pre-pass later if it becomes annoying.
 
@@ -107,7 +107,7 @@ Formatting only. `eslint-config-prettier` disables the stylistic rules that over
 3. `vitest related --run` on changed test files
 4. **In `packages/domain/`**: coverage check (90% gate, 95% target — line + branch)
 
-**Never `--no-verify`.** If a hook fails, fix the underlying issue. The global CLAUDE.md already records this rule; it stays here too because it's load-bearing for autonomous Sandcastle runs where there's no human reviewer to catch a skipped hook.
+**Never `--no-verify`.** If a hook fails, fix the underlying issue. The global CLAUDE.md already records this rule; it stays here too because it's load-bearing for autonomous sandcastle-drain runs where there's no human reviewer to catch a skipped hook.
 
 If a hook is genuinely too slow (e.g. > 30s on small commits), the right move is to make the hook faster (cache TS server, scope ESLint to staged files, reduce Vitest's "related" scope) — _not_ to skip it.
 
@@ -117,6 +117,6 @@ If a hook is genuinely too slow (e.g. > 30s on small commits), the right move is
 
 ## What lives outside this doc
 
-- The actual `.eslintrc.*` and `tsconfig.json` files don't exist yet — they're queued as follow-up Sandcastle issues. This doc is the spec the issue implements.
+- The actual `.eslintrc.*` and `tsconfig.json` files don't exist yet — they're queued as follow-up sandcastle-drain issues. This doc is the spec the issue implements.
 - The custom rule implementations live in `tools/eslint-rules/`, also queued as follow-up issues.
 - `pg_dump` / backup scheduling lives in [personal-use-tradeoffs.md](personal-use-tradeoffs.md), not here.

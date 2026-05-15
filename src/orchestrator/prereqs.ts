@@ -13,16 +13,16 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 
-// Host-project root: when `npx sandcastle` is run, this is the user's project
-// directory (where their `.sandcastle/`, `.git/`, etc. live), NOT the installed
+// Host-project root: when `npx sandcastle-drain` is run, this is the user's project
+// directory (where their `.sandcastle-drain/`, `.git/`, etc. live), NOT the installed
 // library's directory. Computed once at module load — `process.cwd()` is stable
 // for the lifetime of the process.
 export const REPO_ROOT = process.cwd();
 
 // Matches Sandcastle's default image-name convention: `sandcastle:<dir-name>`.
-// `npx sandcastle docker build-image` produces this name without a flag; we
-// derive it from the host project's directory name so the wrapper stays
-// portable across user projects.
+// `npx sandcastle docker build-image` (the @ai-hero/sandcastle CLI, not this
+// wrapper) produces this name without a flag; we derive it from the host
+// project's directory name so the wrapper stays portable across user projects.
 export const IMAGE_NAME = `sandcastle:${basename(REPO_ROOT)}`;
 
 export const HOST_CREDS_PATH = join(homedir(), '.config', 'sandcastle-claude-creds');
@@ -45,17 +45,17 @@ export interface LabelDefinition {
 export const LABEL_DEFINITIONS: readonly LabelDefinition[] = [
   {
     name: 'sandcastle',
-    description: 'Queued for the Sandcastle wrapper to drain',
+    description: 'Queued for sandcastle-drain to process',
     color: '5319E7',
   },
   {
     name: 'in-progress',
-    description: 'Sandcastle wrapper picked up the issue (wrapper-managed)',
+    description: 'sandcastle-drain picked up the issue (wrapper-managed)',
     color: 'FEF2C0',
   },
   {
     name: 'needs-review',
-    description: 'Sandcastle run produced commits — review before merging',
+    description: 'sandcastle-drain run produced commits — review before merging',
     color: 'E99695',
   },
   { name: 'blocked', description: 'Skip this issue (manually applied)', color: 'B60205' },
@@ -66,13 +66,13 @@ export const LABEL_DEFINITIONS: readonly LabelDefinition[] = [
   },
   {
     name: 'priority',
-    description: 'Sandcastle rejection-loop follow-up jumps the queue (wrapper-managed)',
+    description: 'sandcastle-drain rejection-loop follow-up jumps the queue (wrapper-managed)',
     color: 'E11D21',
   },
   { name: 'needs-info', description: 'Waiting for more information', color: 'D93F0B' },
   {
     name: 'oversized',
-    description: 'Sandcastle run exceeded the 150k context ceiling — split via to-issues',
+    description: 'sandcastle-drain run exceeded the 150k context ceiling — split via to-issues',
     color: 'CCCCCC',
   },
   {
@@ -193,26 +193,26 @@ export async function runAllPrereqs(): Promise<{ token: string }> {
   if (missingSkills.length > 0) {
     const installArgs = missingSkills.map((s) => `mattpocock/skills/${s}`).join(' ');
     console.error(
-      `Sandcastle: missing required skills under .claude/skills/: ${missingSkills.join(', ')}. Install with:\n  npx skills@latest add ${installArgs}`,
+      `sandcastle-drain: missing required skills under .claude/skills/: ${missingSkills.join(', ')}. Install with:\n  npx skills@latest add ${installArgs}`,
     );
     process.exit(1);
   }
 
   const authError = await probeAuth();
   if (authError) {
-    console.error(`Sandcastle: ${authError}`);
+    console.error(`sandcastle-drain: ${authError}`);
     process.exit(1);
   }
 
   const ghAuth = await probeGhAuth();
   if (typeof ghAuth === 'string') {
-    console.error(`Sandcastle: ${ghAuth}`);
+    console.error(`sandcastle-drain: ${ghAuth}`);
     process.exit(1);
   }
 
   const labelsError = await probeLabels();
   if (labelsError) {
-    console.error(`Sandcastle: ${labelsError}`);
+    console.error(`sandcastle-drain: ${labelsError}`);
     process.exit(1);
   }
 

@@ -1,6 +1,6 @@
 # Triage Labels
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker, plus the workflow labels the Sandcastle wrapper auto-manages.
+The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker, plus the workflow labels the sandcastle-drain wrapper auto-manages.
 
 ## Triage state labels
 
@@ -16,11 +16,11 @@ Used by the `triage` skill's state machine.
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-> **Note on `needs-info`:** the Sandcastle wrapper at `src/orchestrator/main.ts` also writes this label automatically whenever a run produces 0 commits — bail-out, timeout, or hard error. See the workflow section below. Same label, two writers (you, manually, and the wrapper).
+> **Note on `needs-info`:** the sandcastle-drain wrapper at `src/orchestrator/main.ts` also writes this label automatically whenever a run produces 0 commits — bail-out, timeout, or hard error. See the workflow section below. Same label, two writers (you, manually, and the wrapper).
 
-## Sandcastle workflow labels
+## sandcastle-drain workflow labels
 
-Eight labels that exist only for the Sandcastle wrapper at `src/orchestrator/main.ts`. `sandcastle`, `blocked`, and `retry` are user-applied; `in-progress`, `needs-review`, `priority`, `oversized`, and `skipped-this-run` are wrapper-managed — don't touch them by hand unless you're recovering from a crashed run.
+Eight labels that exist only for the sandcastle-drain wrapper at `src/orchestrator/main.ts`. `sandcastle`, `blocked`, and `retry` are user-applied; `in-progress`, `needs-review`, `priority`, `oversized`, and `skipped-this-run` are wrapper-managed — don't touch them by hand unless you're recovering from a crashed run.
 
 | Label          | Applied when                                                                                                                                                                                                                      | Removed when                                                                                                        |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -30,7 +30,7 @@ Eight labels that exist only for the Sandcastle wrapper at `src/orchestrator/mai
 | `blocked`      | Skip this issue. Apply manually when blocked.                                                                                                                                                                                     | Manually, once unblocked.                                                                                           |
 | `retry`        | You apply alongside `sandcastle` to discard a prior agent attempt and re-run.                                                                                                                                                     | Wrapper removes it as part of the retry handling on the next drain.                                                 |
 | `priority`     | Wrapper applies to a rejection-loop follow-up issue (alongside `sandcastle`). The drain serves `priority`-labeled issues before unflagged ones, then by issue number. May also be applied manually to jump-the-queue urgent work. | Manually, after the issue is resolved or no longer urgent.                                                          |
-| `oversized`    | Wrapper applies to a parent issue when its implementer wrote `.sandcastle/splits.json` during the run and the wrapper filed the listed follow-ups. Audit trail signal — see the **split protocol** section below.                 | Manually, when the follow-ups have all landed and the parent can be closed (or kept open as a tracker — your call). |
+| `oversized`    | Wrapper applies to a parent issue when its implementer wrote `.sandcastle-drain/splits.json` during the run and the wrapper filed the listed follow-ups. Audit trail signal — see the **split protocol** section below.                 | Manually, when the follow-ups have all landed and the parent can be closed (or kept open as a tracker — your call). |
 | `skipped-this-run` | Wrapper applies when a drain bypassed the issue without running the agent — blocked-by-failed-sibling, an existing `agent/issue-N` branch already in place, or the rate-limit tail of a curtailed drain. The accompanying comment names the reason. | Wrapper removes it at the start of the next outcome block so a successful run never carries a stale breadcrumb.       |
 
 The wrapper also writes the triage-state `needs-info` label as one of the run outcomes — see the state machine below.
@@ -84,7 +84,7 @@ If the branch is mostly right but needs only minor tweaks, **don't use `retry`**
 
 ## The split protocol
 
-When the implementer realises mid-run that an issue's acceptance criteria don't fit under the 150k context ceiling, it commits what does fit and writes a list of follow-up issues into `.sandcastle/splits.json` at the worktree root. The wrapper acts on the file after the implementer run completes:
+When the implementer realises mid-run that an issue's acceptance criteria don't fit under the 150k context ceiling, it commits what does fit and writes a list of follow-up issues into `.sandcastle-drain/splits.json` at the worktree root. The wrapper acts on the file after the implementer run completes:
 
 1. Reads + validates the file (array of `{ title, body }`, 1 to 10 entries).
 2. Files each entry as a new GitHub issue with `sandcastle` + `priority` labels. The next drain iteration picks them up before unflagged work — matching the rejection-loop precedent.
@@ -94,7 +94,7 @@ When the implementer realises mid-run that an issue's acceptance criteria don't 
 
 The parent issue's foundation commits still flow through the normal `needs-review` / auto-merge / rejection path — splitting does not throw away the work the implementer did finish. Rejection takes precedence: if the reviewer FAILs on the run, the rejection-loop follow-up subsumes any split intent and the split flow is skipped.
 
-The implementer prompt (`src/prompts/implementer.md.tpl`) documents the file shape and rules. `.sandcastle/splits.json` is gitignored so a sloppy `git add -A` doesn't capture it.
+The implementer prompt (`src/prompts/implementer.md.tpl`) documents the file shape and rules. `.sandcastle-drain/splits.json` is gitignored so a sloppy `git add -A` doesn't capture it.
 
 ---
 

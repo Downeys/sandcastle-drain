@@ -1,6 +1,6 @@
-# Context budget (Sandcastle / autonomous mode)
+# Context budget (sandcastle-drain / autonomous mode)
 
-This is the AI-specific principle. It applies hardest in autonomous Sandcastle runs and as guidance interactively.
+This is the AI-specific principle. It applies hardest in autonomous sandcastle-drain runs and as guidance interactively.
 
 The "smart zone" of an LLM context window is well below the technical ceiling. Anthropic's needle-in-a-haystack research shows retrieval accuracy degrades as context fills, with significant drop-off past ~50–60% fill on Claude models. Empirical agentic-loop quality degrades earlier still — most practitioners observe meaningful degradation around 100–200k cumulative usage including tool outputs.
 
@@ -20,7 +20,7 @@ Tweak these by editing one file. Single source of truth.
 
 ## Issue sizing (when filing or accepting `sandcastle` work)
 
-An issue is "right-sized" if it can be completed in one Sandcastle run ending under the **150k ceiling** of cumulative context (issue body + tool outputs + agent thinking + commits + final summary).
+An issue is "right-sized" if it can be completed in one sandcastle-drain run ending under the **150k ceiling** of cumulative context (issue body + tool outputs + agent thinking + commits + final summary).
 
 Useful proxy heuristics:
 - The agent needs to read more than ~5 files
@@ -54,7 +54,7 @@ Mid-iteration token usage is unmeasured in this rig. The compensating discipline
 
 ## Summarize-don't-paste
 
-> **Hard rule for autonomous Sandcastle runs.** When tool output isn't needed verbatim downstream, summarize the relevant 3 lines instead of pasting the full output into the next reasoning step.
+> **Hard rule for autonomous sandcastle-drain runs.** When tool output isn't needed verbatim downstream, summarize the relevant 3 lines instead of pasting the full output into the next reasoning step.
 >
 > **Guidance for interactive sessions.** The user can see verbose output and react; mechanical compaction matters less.
 

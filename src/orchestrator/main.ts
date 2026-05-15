@@ -194,7 +194,7 @@ async function markSkipped(
   reason: string,
   opts: { removeSandcastle: boolean },
 ): Promise<void> {
-  await postComment(issue, `**Sandcastle drain skipped this issue.** ${reason}`);
+  await postComment(issue, `**Sandcastle-drain skipped this issue.** ${reason}`);
   await addLabel(issue, SKIPPED_THIS_RUN_LABEL);
   if (opts.removeSandcastle) {
     await removeLabel(issue, QUEUE_LABEL);
@@ -276,7 +276,7 @@ function buildStatusComment(args: {
     attempts,
   } = args;
   const lines: string[] = [];
-  lines.push(`**Sandcastle run:** \`${status}\``);
+  lines.push(`**sandcastle-drain run:** \`${status}\``);
   if (attempts && attempts.current > 1) {
     lines.push(`**Attempts:** ${attempts.current} of ${attempts.max}`);
   }
@@ -332,7 +332,7 @@ async function runAndPostReviewer(args: {
 }): Promise<ReviewerOutput | undefined> {
   const reviewerLogPath = join(
     REPO_ROOT,
-    '.sandcastle',
+    '.sandcastle-drain',
     'logs',
     `issue-${args.issueNumber}-reviewer.log`,
   );
@@ -478,7 +478,7 @@ async function handleRejection(args: {
       tag,
       branch: args.branch,
       cwd: REPO_ROOT,
-      message: `Rejected by Sandcastle reviewer (attempt ${attempt}, issue #${args.issue.number}). ${args.reviewerOutput.summary}`,
+      message: `Rejected by sandcastle-drain reviewer (attempt ${attempt}, issue #${args.issue.number}). ${args.reviewerOutput.summary}`,
     });
     console.log(`[wrapper] tagged ${args.branch} as ${tag}`);
   } catch (err) {
@@ -580,7 +580,7 @@ async function createSplitIssue(args: {
 }
 
 /**
- * Split-protocol outcome: file each entry from `.sandcastle/splits.json` as a
+ * Split-protocol outcome: file each entry from `.sandcastle-drain/splits.json` as a
  * priority follow-up, comment on the parent linking them, apply `oversized`.
  * Returns the count + follow-up numbers, or `undefined` when the splits file
  * was malformed or every gh-create failed.
@@ -723,7 +723,7 @@ async function processIssue(
   // (b.5) Clean up any orphaned worktree dir from a prior failed run. Without
   // this, sandcastle's WorktreeManager hits "Function not implemented" on
   // Windows when git tries to delete a pnpm-installed worktree dir.
-  const worktreePath = join(REPO_ROOT, '.sandcastle', 'worktrees', `agent-issue-${issue.number}`);
+  const worktreePath = join(REPO_ROOT, '.sandcastle-drain', 'worktrees', `agent-issue-${issue.number}`);
   if (existsSync(worktreePath)) {
     console.log(`[wrapper] cleaning orphaned worktree dir ${worktreePath}`);
     await cleanupWorktree(worktreePath);
@@ -844,7 +844,7 @@ async function processIssue(
     attempt += 1;
   }
 
-  // (f.5) Capture `.sandcastle/splits.json` from the worktree BEFORE any
+  // (f.5) Capture `.sandcastle-drain/splits.json` from the worktree BEFORE any
   // cleanup destroys it. The implementer writes this file when the issue
   // didn't fit in one run and named follow-ups for the wrapper to file. We
   // only read it here; the actual issue-filing happens after the reviewer
@@ -940,7 +940,7 @@ async function processIssue(
     });
   }
 
-  // (e.8) Split protocol: act on `.sandcastle/splits.json` captured at (f.5).
+  // (e.8) Split protocol: act on `.sandcastle-drain/splits.json` captured at (f.5).
   // Files each entry as a `sandcastle` + `priority` follow-up so the next
   // drain iteration picks them up. Suppressed when rejection fired — the
   // rejection follow-up already subsumes any split intent on rejected work.
@@ -1093,7 +1093,7 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
         for (const r of remaining) {
           await markSkipped(
             r.number,
-            'Sandcastle hit the model rate limit before reaching this issue. Re-run drain after the limit clears.',
+            'sandcastle-drain hit the model rate limit before reaching this issue. Re-run drain after the limit clears.',
             { removeSandcastle: false },
           );
           summaries.push({ issue: r.number, status: 'skipped (rate-limited)', commitCount: 0 });
@@ -1119,7 +1119,7 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
  * queue and prints a summary at the end.
  */
 export async function runDrain(args: { token: string }): Promise<void> {
-  console.log('[wrapper] Sandcastle drain starting');
+  console.log('[wrapper] sandcastle-drain starting');
 
   const queue = await fetchQueue();
   if (queue.length === 0) {

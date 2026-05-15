@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe('stage()', () => {
-  it('copies principles + agent-docs into <cwd>/.sandcastle/staged/', async () => {
+  it('copies principles + agent-docs into <cwd>/.sandcastle-drain/staged/', async () => {
     await stage(host);
 
     expect(existsSync(join(host, STAGED_DIR_RELATIVE, 'principles', 'README.md'))).toBe(true);
@@ -31,10 +31,10 @@ describe('stage()', () => {
     );
   });
 
-  it('does not write any prompt files into the host .sandcastle/ dir', async () => {
+  it('does not write any prompt files into the host .sandcastle-drain/ dir', async () => {
     await stage(host);
-    expect(existsSync(join(host, '.sandcastle', 'prompt.md'))).toBe(false);
-    expect(existsSync(join(host, '.sandcastle', 'reviewer.md'))).toBe(false);
+    expect(existsSync(join(host, '.sandcastle-drain', 'prompt.md'))).toBe(false);
+    expect(existsSync(join(host, '.sandcastle-drain', 'reviewer.md'))).toBe(false);
   });
 
   it('replaces a stale staged tree on re-stage (library-upgrade scenario)', async () => {
