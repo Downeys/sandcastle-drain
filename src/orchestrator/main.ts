@@ -33,7 +33,7 @@ import {
 } from './sibling-context.js';
 import { formatSummary, type RunSummary } from './summary.js';
 import { tryRecoverCommits } from './teardown.js';
-import { removeWorktreeDir } from './worktree-cleanup.js';
+import { removeWorktreeDir, worktreePathsForBranch } from './worktree-cleanup.js';
 import { formatReviewerComment, formatReviewerErrorComment, runReviewer } from './reviewer.js';
 import type { ReviewerOutput, ReviewerVerdict } from './reviewer.js';
 import { detectPackageManager, formatCiSection, runCiGate, type CiGateResult } from './ci-gate.js';
@@ -213,12 +213,6 @@ async function branchExists(branch: string): Promise<boolean> {
   return result.exitCode === 0;
 }
 
-async function deleteBranch(branch: string): Promise<void> {
-  // -D = force delete; the branch is unmerged by definition (it's the agent's
-  // rejected work). The user explicitly opted in via the `retry` label.
-  await execa('git', ['branch', '-D', branch], { cwd: REPO_ROOT, reject: false });
-}
-
 // A "branch with zero commits ahead of main" carries no work to preserve, so
 // the conservative skip-on-existing-branch path can safely discard it. Used
 // to auto-recover from a prior drain that created the branch but died before
@@ -242,6 +236,56 @@ async function remoteBranchExists(branch: string): Promise<boolean> {
     reject: false,
   });
   return result.exitCode === 0;
+}
+
+// Idempotent reset of all git state for `branch`: drops any worktree git has
+// registered against it (at any path, not just our expected one), prunes
+// dangling metadata, then force-deletes the branch. Throws if the branch is
+// still present at the end — surfaces residual state instead of silently
+// proceeding.
+//
+// Plain `git branch -D` is insufficient on its own: git refuses to delete a
+// branch checked out in a registered worktree, and a drain killed mid-run
+// leaves the worktree registered. The fix uses `git worktree list --porcelain`
+// to find the real path (which may not match the wrapper's expected location
+// if the working-dir was renamed between runs) and removes the worktree first.
+async function resetIssueState(branch: string): Promise<void> {
+  const linkedPaths = await worktreePathsForBranch(REPO_ROOT, branch);
+  if (linkedPaths.length > 0) {
+    console.log(
+      `[wrapper] resetting ${branch}: removing worktree(s) at ${linkedPaths.join(', ')}`,
+    );
+  }
+  for (const path of linkedPaths) {
+    const removed = await execa('git', ['worktree', 'remove', '--force', path], {
+      cwd: REPO_ROOT,
+      reject: false,
+    });
+    if (removed.exitCode !== 0) {
+      // Most common Windows failure: pnpm symlink farm defeats git's recursive
+      // delete with "Function not implemented". `cleanupWorktree` uses the
+      // robocopy /MIR workaround and then `git worktree prune` picks up the
+      // dangling registration on the next call below.
+      console.log(
+        `[wrapper] git worktree remove failed for ${path} (exit ${removed.exitCode}); falling back to direct cleanup`,
+      );
+      await cleanupWorktree(path);
+    }
+  }
+
+  await execa('git', ['worktree', 'prune'], { cwd: REPO_ROOT, reject: false });
+
+  if (await branchExists(branch)) {
+    const del = await execa('git', ['branch', '-D', branch], { cwd: REPO_ROOT, reject: false });
+    if (del.exitCode !== 0 || (await branchExists(branch))) {
+      throw new Error(
+        `Failed to reset state for ${branch}: git branch -D exited ${del.exitCode}.\n` +
+          `stderr: ${del.stderr || '(empty)'}\n` +
+          `Manual recovery: run \`git worktree list\`, then \`git worktree remove --force <path>\` ` +
+          `for any worktree on ${branch}, then \`git branch -D ${branch}\`.`,
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +539,7 @@ async function handleRejection(args: {
   const branchSummary = await summarizeBranchForRejection(args.branch);
 
   if (await branchExists(args.branch)) {
-    await deleteBranch(args.branch);
+    await resetIssueState(args.branch);
     console.log(`[wrapper] discarded branch ${args.branch}`);
   }
 
@@ -691,11 +735,12 @@ async function processIssue(
     }
   }
 
-  // (a) Honor `retry` — discard prior branch and clear the label so the next
-  // queue fetch doesn't keep re-triggering it.
+  // (a) Honor `retry` — reset all state for the branch (including any
+  // worktree git still has registered against it from a killed prior run) and
+  // clear the label so the next queue fetch doesn't keep re-triggering it.
   if (issue.labels.includes(RETRY_LABEL)) {
-    console.log(`[wrapper] retry label set; discarding prior branch ${branch} if any`);
-    if (await branchExists(branch)) await deleteBranch(branch);
+    console.log(`[wrapper] retry label set; resetting state for ${branch}`);
+    await resetIssueState(branch);
     await removeLabel(issue.number, RETRY_LABEL);
   }
 
@@ -705,7 +750,7 @@ async function processIssue(
   // would otherwise sit stuck until the user applied `retry` manually.
   if (await branchExists(branch)) {
     if (await branchIsEmpty(branch)) {
-      await deleteBranch(branch);
+      await resetIssueState(branch);
       console.log(`[wrapper] discarded empty stale branch ${branch} from prior run`);
     } else {
       console.log(
@@ -835,11 +880,12 @@ async function processIssue(
       !containsRateLimit(stdout);
     if (!shouldRetry) break;
 
-    // Between-attempt cleanup mirrors the manual `retry` label path: discard
-    // the branch sandcastle created (no commits, nothing to preserve) and
-    // wipe the worktree dir so attempt 2 starts from a fresh checkout off
-    // main.
-    if (await branchExists(branch)) await deleteBranch(branch);
+    // Between-attempt cleanup mirrors the manual `retry` label path: reset
+    // all state for the branch (worktree git has registered + the branch
+    // itself) so attempt 2 starts from a fresh checkout off main. Also wipe
+    // the on-disk path in case the worktree was created somewhere
+    // resetIssueState didn't find via git (e.g. an old-path leftover).
+    if (await branchExists(branch)) await resetIssueState(branch);
     await cleanupWorktree(worktreePath);
     attempt += 1;
   }
