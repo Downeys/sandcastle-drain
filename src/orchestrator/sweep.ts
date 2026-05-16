@@ -14,7 +14,7 @@ import { execa } from 'execa';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { REPO_ROOT } from './prereqs.js';
-import { removeWorktreeDir } from './worktree-cleanup.js';
+import { removeWorktreeDir, sandcastleWorktreePath } from './worktree-cleanup.js';
 
 interface RunResult {
   exitCode: number;
@@ -74,7 +74,7 @@ export interface SweepBranchResult {
  */
 export async function sweepBranch(args: SweepBranchArgs): Promise<SweepBranchResult> {
   const branch = `agent/issue-${args.issue}`;
-  const worktreePath = resolve(REPO_ROOT, '.sandcastle-drain', 'worktrees', `agent-issue-${args.issue}`);
+  const worktreePath = resolve(sandcastleWorktreePath(REPO_ROOT, branch));
 
   console.log(`[sweep] Checking that PR for ${branch} is merged...`);
   const merged = await findMergedPr(branch);

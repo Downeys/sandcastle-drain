@@ -33,7 +33,11 @@ import {
 } from './sibling-context.js';
 import { formatSummary, type RunSummary } from './summary.js';
 import { tryRecoverCommits } from './teardown.js';
-import { removeWorktreeDir, worktreePathsForBranch } from './worktree-cleanup.js';
+import {
+  removeWorktreeDir,
+  sandcastleWorktreePath,
+  worktreePathsForBranch,
+} from './worktree-cleanup.js';
 import { formatReviewerComment, formatReviewerErrorComment, runReviewer } from './reviewer.js';
 import type { ReviewerOutput, ReviewerVerdict } from './reviewer.js';
 import { detectPackageManager, formatCiSection, runCiGate, type CiGateResult } from './ci-gate.js';
@@ -274,6 +278,17 @@ async function resetIssueState(branch: string): Promise<void> {
   }
 
   await execa('git', ['worktree', 'prune'], { cwd: REPO_ROOT, reject: false });
+
+  // Defense-in-depth: even when git has no registration for this branch (a
+  // prior run pruned the metadata but failed to remove the dir on Windows),
+  // the on-disk orphan still collides with the next `git worktree add`. Probe
+  // the expected library path and clean it explicitly. `cleanupWorktree` is
+  // best-effort — logs but never throws — matching the surrounding code.
+  const expectedDir = sandcastleWorktreePath(REPO_ROOT, branch);
+  if (existsSync(expectedDir) && !linkedPaths.includes(expectedDir)) {
+    console.log(`[wrapper] resetting ${branch}: cleaning orphan dir at ${expectedDir}`);
+    await cleanupWorktree(expectedDir);
+  }
 
   if (await branchExists(branch)) {
     const del = await execa('git', ['branch', '-D', branch], { cwd: REPO_ROOT, reject: false });
@@ -767,8 +782,10 @@ async function processIssue(
 
   // (b.5) Clean up any orphaned worktree dir from a prior failed run. Without
   // this, sandcastle's WorktreeManager hits "Function not implemented" on
-  // Windows when git tries to delete a pnpm-installed worktree dir.
-  const worktreePath = join(REPO_ROOT, '.sandcastle-drain', 'worktrees', `agent-issue-${issue.number}`);
+  // Windows when git tries to delete a pnpm-installed worktree dir. The probe
+  // path must point at upstream sandcastle's worktree dir (`.sandcastle/`),
+  // not our wrapper's dir (`.sandcastle-drain/`) — sandcastle owns this path.
+  const worktreePath = sandcastleWorktreePath(REPO_ROOT, branch);
   if (existsSync(worktreePath)) {
     console.log(`[wrapper] cleaning orphaned worktree dir ${worktreePath}`);
     await cleanupWorktree(worktreePath);

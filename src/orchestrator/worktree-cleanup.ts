@@ -14,6 +14,22 @@ import { mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
+// Upstream @ai-hero/sandcastle's config dir name. This is the LIBRARY's
+// directory, not ours — it creates worktrees at `<repo>/.sandcastle/worktrees/`
+// and reads `.sandcastle/.env`. The wrapper's own dir is `.sandcastle-drain/`.
+// Do not rename this when renaming wrapper-owned paths.
+export const SANDCASTLE_LIB_DIR = '.sandcastle';
+
+// Returns the on-disk path where upstream sandcastle creates the worktree for
+// `branch`. Upstream flattens `agent/issue-N` → `agent-issue-N`. Used by the
+// wrapper's pre-flight orphan cleanup so a locked dir from a prior failed run
+// is removed (via robocopy /MIR on Windows) before sandcastle's own prune tries
+// and fails with EPERM on pnpm symlinks.
+export function sandcastleWorktreePath(repoRoot: string, branch: string): string {
+  const flat = branch.replaceAll('/', '-');
+  return join(repoRoot, SANDCASTLE_LIB_DIR, 'worktrees', flat);
+}
+
 // Parses `git worktree list --porcelain` output and returns the filesystem
 // paths of any worktrees that have `branch` checked out.
 //
