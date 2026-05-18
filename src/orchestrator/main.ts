@@ -32,6 +32,7 @@ import {
   type SiblingSummary,
 } from './sibling-context.js';
 import { formatSummary, type RunSummary } from './summary.js';
+import { SupersedesChain } from './supersedes-chain.js';
 import { tryRecoverCommits } from './teardown.js';
 import {
   removeWorktreeDir,
@@ -517,17 +518,18 @@ async function createFollowUpIssue(args: {
 
 /**
  * Reviewer-FAIL outcome: tag the work, discard the branch, file a priority
- * follow-up, comment on the original. Returns `true` if the tag landed —
- * which is the load-bearing step. Follow-up creation failing is logged but
- * doesn't unwind the tag/discard: the commits are preserved at the tag and
- * the human can re-file by hand.
+ * follow-up, comment on the original. `tagged` is true if the load-bearing
+ * rejection tag landed — follow-up creation failing is logged but doesn't
+ * unwind the tag/discard. `followUpNumber` is the new issue's number when gh
+ * accepted the create; it lets the drain loop record supersession chains so a
+ * later auto-merge of the chain rehabilitates this issue's ancestors.
  */
 async function handleRejection(args: {
   issue: Issue;
   branch: string;
   commits: readonly { sha: string }[];
   reviewerOutput: ReviewerOutput;
-}): Promise<boolean> {
+}): Promise<{ tagged: boolean; followUpNumber?: number }> {
   const existingTags = await listRejectionTagsForIssue(args.issue.number, REPO_ROOT);
   const attempt = nextAttemptNumber(args.issue.number, existingTags);
   const tag = rejectionTagName(args.issue.number, attempt);
@@ -545,7 +547,7 @@ async function handleRejection(args: {
       `[wrapper] failed to tag rejected branch ${args.branch} as ${tag}:`,
       (err as Error).message,
     );
-    return false;
+    return { tagged: false };
   }
 
   // Capture diff/log summary *before* deleting the branch — main..branch
@@ -591,7 +593,7 @@ async function handleRejection(args: {
     console.log(`[wrapper] closed #${args.issue.number} (superseded by #${followUp.number})`);
   }
 
-  return true;
+  return { tagged: true, followUpNumber: followUp?.number };
 }
 
 /**
@@ -994,13 +996,16 @@ async function processIssue(
   // follow-up issue carrying the reviewer findings forward. The original
   // issue is closed out with a pointer comment.
   let rejected = false;
+  let rejectionFollowUp: number | undefined;
   if (commits.length > 0 && reviewerOutput?.verdict === 'FAIL') {
-    rejected = await handleRejection({
+    const rejection = await handleRejection({
       issue,
       branch,
       commits,
       reviewerOutput,
     });
+    rejected = rejection.tagged;
+    rejectionFollowUp = rejection.followUpNumber;
   }
 
   // (e.8) Split protocol: act on `.sandcastle-drain/splits.json` captured at (f.5).
@@ -1063,6 +1068,7 @@ async function processIssue(
     ciOk: ciResult?.ok,
     autoMerged,
     rejected,
+    rejectionFollowUp,
     split,
     attempt,
   };
@@ -1090,6 +1096,12 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
   // `## Blocked by` section will be skipped — we won't build on a foundation
   // that didn't land. Survives the mid-loop refetch below.
   const failedThisRun = new Set<number>();
+  // Tracks rejected → priority-follow-up supersession chains so a later
+  // auto-merge of the chain rehabilitates the failed ancestors. Without this,
+  // a chain like #132 → #142 → #144 (where #144 auto-merges) leaves #132 and
+  // #142 stuck in `failedThisRun`, skipping dependents whose blockers actually
+  // shipped under a different number.
+  const supersedesChain = new SupersedesChain();
   let queue: Issue[] = [...initial];
   let i = 0;
 
@@ -1099,11 +1111,30 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
       const summary = await processIssue(issue, ghToken, siblings, failedThisRun);
       summaries.push(summary);
 
+      // Rehabilitate ancestors when the tail of a supersession chain lands.
+      // E.g. #132 → #142 → #144 with #144 auto-merged drops #132 and #142
+      // from failedThisRun so their dependents stop getting skipped.
+      if (summary.autoMerged) {
+        for (const ancestor of supersedesChain.ancestorsOf(issue.number)) {
+          if (failedThisRun.delete(ancestor)) {
+            console.log(
+              `[wrapper] rehabilitated #${ancestor} — superseded by auto-merged #${issue.number}`,
+            );
+          }
+        }
+      }
+
       // "Did not land" = anything except a clean auto-merge. Rejected,
       // needs-review, needs-info, CI-red, timeout — all block dependents this
       // run. Skipped issues themselves don't poison the set: they never ran.
       if (!summary.autoMerged && !summary.status.startsWith('skipped')) {
         failedThisRun.add(issue.number);
+      }
+
+      // Record the supersession so a future auto-merge of the follow-up
+      // (or a deeper descendant) can roll forward through this issue.
+      if (summary.rejected && summary.rejectionFollowUp !== undefined) {
+        supersedesChain.recordRejection(issue.number, summary.rejectionFollowUp);
       }
 
       // Capture sibling context for subsequent iterations. Only branches with

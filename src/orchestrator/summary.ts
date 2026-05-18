@@ -19,6 +19,10 @@ export interface RunSummary {
   // discarded the branch, and filed a priority follow-up issue. Mutually
   // exclusive with autoMerged.
   rejected?: boolean;
+  // When the rejection loop filed a priority follow-up, the new issue's number.
+  // Lets the drain loop track supersession chains and rehabilitate ancestors
+  // from `failedThisRun` if the chain eventually auto-merges.
+  rejectionFollowUp?: number;
   // Set when the implementer wrote `.sandcastle-drain/splits.json` and the wrapper
   // filed each entry as a `sandcastle` + `priority` follow-up. `count` is the
   // number of follow-ups filed (may be < requested if some gh create calls
