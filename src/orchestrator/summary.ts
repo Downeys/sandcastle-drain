@@ -23,6 +23,17 @@ export interface RunSummary {
   // Lets the drain loop track supersession chains and rehabilitate ancestors
   // from `failedThisRun` if the chain eventually auto-merges.
   rejectionFollowUp?: number;
+  // true when the CI gate stayed red across the implementer + all fixer
+  // attempts, and the wrapper tagged the commits + filed a priority CI-
+  // failure follow-up. Mutually exclusive with autoMerged and rejected.
+  ciFailed?: boolean;
+  // When the CI-failure loop filed a priority follow-up, the new issue's
+  // number. Same supersession-chain semantics as rejectionFollowUp.
+  ciFailureFollowUp?: number;
+  // Number of fixer-agent attempts the wrapper made on this issue. Undefined
+  // when the initial CI gate passed (or never ran); otherwise 0..N. A non-
+  // zero value with ciOk: true means the fixer recovered a red gate.
+  fixerAttempts?: number;
   // Set when the implementer wrote `.sandcastle-drain/splits.json` and the wrapper
   // filed each entry as a `sandcastle` + `priority` follow-up. `count` is the
   // number of follow-ups filed (may be < requested if some gh create calls
@@ -43,6 +54,8 @@ export interface SummaryCounts {
   bailedOut: number;
   failed: number;
   ciFailed: number;
+  ciFollowedUp: number;
+  fixerRecovered: number;
   needsReview: number;
   needsInfo: number;
   autoMerged: number;
@@ -58,7 +71,12 @@ const isAutoMerged = (s: RunSummary): boolean => s.autoMerged === true;
 
 const isRejected = (s: RunSummary): boolean => s.rejected === true;
 
+const isCiFailed = (s: RunSummary): boolean => s.ciFailed === true;
+
 const isSplit = (s: RunSummary): boolean => s.split !== undefined && s.split.count > 0;
+
+const isFixerRecovered = (s: RunSummary): boolean =>
+  s.fixerAttempts !== undefined && s.fixerAttempts > 0 && s.ciOk === true;
 
 function splitSuffix(s: RunSummary): string {
   if (!s.split || s.split.count === 0) return '';
@@ -67,13 +85,17 @@ function splitSuffix(s: RunSummary): string {
 }
 
 const isReview = (s: RunSummary): boolean =>
-  hasReviewStatus(s) && s.ciOk !== false && !isAutoMerged(s) && !isRejected(s);
+  hasReviewStatus(s) && s.ciOk !== false && !isAutoMerged(s) && !isRejected(s) && !isCiFailed(s);
 
 const isFailed = (s: RunSummary): boolean =>
   typeof s.status === 'string' && s.status.startsWith('failed');
 
+// CI-failed runs no longer fall through to needs-info — they're tagged +
+// filed as a priority follow-up and tracked under `ciFailed` instead.
 const isInfo = (s: RunSummary): boolean =>
-  s.status === 'bailed-out' || isFailed(s) || (hasReviewStatus(s) && s.ciOk === false);
+  s.status === 'bailed-out' ||
+  isFailed(s) ||
+  (hasReviewStatus(s) && s.ciOk === false && !isCiFailed(s));
 
 const isSkipped = (s: RunSummary): boolean =>
   typeof s.status === 'string' && s.status.startsWith('skipped');
@@ -87,6 +109,8 @@ export function computeCounts(summaries: readonly RunSummary[]): SummaryCounts {
     bailedOut: summaries.filter((s) => s.status === 'bailed-out').length,
     failed: summaries.filter(isFailed).length,
     ciFailed: summaries.filter((s) => hasReviewStatus(s) && s.ciOk === false).length,
+    ciFollowedUp: summaries.filter(isCiFailed).length,
+    fixerRecovered: summaries.filter(isFixerRecovered).length,
     needsReview: summaries.filter(isReview).length,
     needsInfo: summaries.filter(isInfo).length,
     autoMerged: summaries.filter(isAutoMerged).length,
@@ -101,27 +125,36 @@ export function formatSummary(summaries: readonly RunSummary[]): string {
   const lines = [
     '',
     '[wrapper] === Drain summary ===',
-    `  attempted   : ${c.attempted}`,
-    `  auto-merged : ${c.autoMerged}`,
-    `  rejected    : ${c.rejected}`,
-    `  split       : ${c.split}`,
-    `  needs-review: ${c.needsReview} (${c.completed} completed, ${c.partialWork} partial, ${c.windowsTeardown} windows-teardown)`,
-    `  needs-info  : ${c.needsInfo} (${c.bailedOut} bailed-out, ${c.failed} failed, ${c.ciFailed} ci-failed)`,
-    `  skipped     : ${c.skipped}`,
-    `  failed      : ${c.failed}`,
+    `  attempted    : ${c.attempted}`,
+    `  auto-merged  : ${c.autoMerged}`,
+    `  rejected     : ${c.rejected}`,
+    `  ci-followup  : ${c.ciFollowedUp}`,
+    `  fixer-saved  : ${c.fixerRecovered}`,
+    `  split        : ${c.split}`,
+    `  needs-review : ${c.needsReview} (${c.completed} completed, ${c.partialWork} partial, ${c.windowsTeardown} windows-teardown)`,
+    `  needs-info   : ${c.needsInfo} (${c.bailedOut} bailed-out, ${c.failed} failed)`,
+    `  skipped      : ${c.skipped}`,
+    `  failed       : ${c.failed}`,
     '',
   ];
   for (const s of summaries) {
-    const branchPart = s.branch ? ` (${s.branch}, ${s.commitCount} commits)` : '';
-    const reviewHint = s.branch ? ` — review with: git diff main..${s.branch}` : '';
-    const ciSuffix = s.ciOk === false ? ' [CI FAILED]' : '';
-    const mergedSuffix = s.autoMerged ? ' [auto-merged]' : '';
-    const rejectedSuffix = s.rejected ? ' [rejected]' : '';
-    const split = splitSuffix(s);
-    const attemptSuffix = s.attempt && s.attempt > 1 ? ` (attempt ${s.attempt})` : '';
-    lines.push(
-      `  #${s.issue}: ${s.status}${ciSuffix}${mergedSuffix}${rejectedSuffix}${split}${attemptSuffix}${branchPart}${reviewHint}`,
-    );
+    lines.push(`  #${s.issue}: ${s.status}${formatSuffixes(s)}`);
   }
   return lines.join('\n');
+}
+
+function formatSuffixes(s: RunSummary): string {
+  const branchPart = s.branch ? ` (${s.branch}, ${s.commitCount} commits)` : '';
+  const reviewHint = s.branch ? ` — review with: git diff main..${s.branch}` : '';
+  const ciSuffix = s.ciOk === false ? ' [CI FAILED]' : '';
+  const mergedSuffix = s.autoMerged ? ' [auto-merged]' : '';
+  const rejectedSuffix = s.rejected ? ' [rejected]' : '';
+  const ciFailedSuffix = s.ciFailed ? ' [ci-failed → follow-up]' : '';
+  const fixerSuffix =
+    s.fixerAttempts && s.fixerAttempts > 0 && s.ciOk === true
+      ? ` [fixer: ${s.fixerAttempts}x]`
+      : '';
+  const split = splitSuffix(s);
+  const attemptSuffix = s.attempt && s.attempt > 1 ? ` (attempt ${s.attempt})` : '';
+  return `${ciSuffix}${mergedSuffix}${rejectedSuffix}${ciFailedSuffix}${fixerSuffix}${split}${attemptSuffix}${branchPart}${reviewHint}`;
 }

@@ -42,15 +42,28 @@ import {
 import { formatReviewerComment, formatReviewerErrorComment, runReviewer } from './reviewer.js';
 import type { ReviewerOutput, ReviewerVerdict } from './reviewer.js';
 import { detectPackageManager, formatCiSection, runCiGate, type CiGateResult } from './ci-gate.js';
+import {
+  formatFixerComment,
+  formatFixerSection,
+  runFixer,
+  type FixerAttempt,
+} from './fixer.js';
 import { shipBranch } from './ship.js';
 import { sweepBranch } from './sweep.js';
 import {
+  buildCiFailureFollowUpBody,
+  buildCiFailureFollowUpTitle,
   buildFollowUpBody,
   buildFollowUpTitle,
+  buildOriginalIssueCiFailureComment,
   buildOriginalIssueRejectionComment,
+  ciFailureTagName,
+  createCiFailureTag,
   createRejectionTag,
+  listCiFailureTagsForIssue,
   listRejectionTagsForIssue,
   nextAttemptNumber,
+  nextCiAttemptNumber,
   PRIORITY_LABEL,
   rejectionTagName,
   sortQueue,
@@ -93,6 +106,13 @@ const MAX_ATTEMPTS_PER_ISSUE = 2;
 // reading the principles + diff + emitting a verdict shouldn't take 90 minutes.
 const REVIEWER_IDLE_TIMEOUT_SECONDS = 300;
 const REVIEWER_WALL_CLOCK_TIMEOUT_MS = 30 * 60 * 1000;
+
+// Fixer runs after a CI-red implementer attempt. Same envelope as the reviewer
+// — bounded scope (read CI excerpt + diff, make a surgical edit, commit).
+// Worst case at MAX_FIX_ATTEMPTS=2 adds ~60 min on top of the implementer.
+const FIXER_IDLE_TIMEOUT_SECONDS = REVIEWER_IDLE_TIMEOUT_SECONDS;
+const FIXER_WALL_CLOCK_TIMEOUT_MS = REVIEWER_WALL_CLOCK_TIMEOUT_MS;
+const MAX_FIX_ATTEMPTS = 2;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -322,6 +342,7 @@ function buildStatusComment(args: {
   pushedWarning: boolean;
   siblingContext?: { count: number; tokens: number };
   ciResult?: CiGateResult;
+  fixerAttempts?: readonly FixerAttempt[];
   attempts?: { current: number; max: number };
 }): string {
   const {
@@ -333,6 +354,7 @@ function buildStatusComment(args: {
     pushedWarning,
     siblingContext,
     ciResult,
+    fixerAttempts,
     attempts,
   } = args;
   const lines: string[] = [];
@@ -353,6 +375,10 @@ function buildStatusComment(args: {
   if (ciResult) {
     lines.push('');
     lines.push(formatCiSection(ciResult));
+  }
+  if (fixerAttempts && fixerAttempts.length > 0) {
+    lines.push('');
+    lines.push(formatFixerSection(fixerAttempts));
   }
   if (pushedWarning) {
     lines.push('');
@@ -440,6 +466,137 @@ async function runAndPostReviewer(args: {
     `[wrapper] reviewer for #${args.issueNumber} produced no verdict: ${runResult.parseError ?? 'unknown'}`,
   );
   return undefined;
+}
+
+function lastLinesOfFailingCi(ciResult: CiGateResult, n: number): string {
+  const failed = ciResult.runs.find((r) => r.exitCode !== 0);
+  if (!failed) return '(no failing run captured)';
+  const lines = failed.output.split(/\r?\n/);
+  return lines.slice(Math.max(0, lines.length - n)).join('\n');
+}
+
+async function readBranchTipSha(branch: string): Promise<string> {
+  const result = await execa('git', ['rev-parse', branch], {
+    cwd: REPO_ROOT,
+    reject: false,
+  });
+  if (result.exitCode !== 0) return '';
+  return result.stdout.trim();
+}
+
+interface FixLoopResult {
+  finalCiResult: CiGateResult;
+  attempts: readonly FixerAttempt[];
+}
+
+/**
+ * CI ↔ fixer loop. Called when the initial CI gate is red. Runs up to
+ * `MAX_FIX_ATTEMPTS` fixer attempts, re-running the CI gate after each one.
+ * Returns the final CI result and per-attempt records.
+ *
+ * Each fixer attempt:
+ *   1. Spawn a sandcastle run on the existing branch with the CI failure
+ *      excerpt + last commit SHA. The fixer commits on top.
+ *   2. Re-run the CI gate against the (possibly extended) branch.
+ *   3. If CI is now green, return immediately — the reviewer takes over.
+ *   4. Otherwise loop. If the fixer made no commits AND CI is still red, the
+ *      next attempt is unlikely to help on the same input; we still try once
+ *      more (the prompt gets the latest failing output) but the caller can
+ *      use this signal in the follow-up body.
+ *
+ * Each attempt posts a per-attempt comment on the GitHub issue so the human
+ * sees progress in real time without tailing logs.
+ */
+async function runFixLoop(args: {
+  issueNumber: number;
+  branch: string;
+  ghToken: string;
+  worktreePath: string;
+  initialCiResult: CiGateResult;
+}): Promise<FixLoopResult> {
+  const { issueNumber, branch, ghToken, worktreePath, initialCiResult } = args;
+  const attempts: FixerAttempt[] = [];
+  let currentCi: CiGateResult = initialCiResult;
+
+  for (let attempt = 1; attempt <= MAX_FIX_ATTEMPTS; attempt++) {
+    const ciFailureExcerpt = lastLinesOfFailingCi(currentCi, 80);
+    const lastCommitSha = await readBranchTipSha(branch);
+    const fixerLogPath = join(
+      REPO_ROOT,
+      '.sandcastle-drain',
+      'logs',
+      `issue-${issueNumber}-fixer-${attempt}.log`,
+    );
+
+    console.log(
+      `[wrapper] fixer attempt ${attempt}/${MAX_FIX_ATTEMPTS} for #${issueNumber} on ${branch}`,
+    );
+    const fixer = await runFixer({
+      imageName: IMAGE_NAME,
+      hostCredsPath: HOST_CREDS_PATH,
+      sandboxCredsPath: SANDBOX_CREDS_PATH,
+      stagedHostPath: join(REPO_ROOT, STAGED_DIR_RELATIVE),
+      ghToken,
+      issueNumber,
+      branch,
+      fixerLogPath,
+      ciFailureExcerpt,
+      lastCommitSha,
+      idleTimeoutSeconds: FIXER_IDLE_TIMEOUT_SECONDS,
+      wallClockTimeoutMs: FIXER_WALL_CLOCK_TIMEOUT_MS,
+    });
+
+    // Worktree gets the same pre-gate cleanup as the implementer flow — the
+    // pnpm symlink farm on Windows defeats next-gate dep install otherwise.
+    await cleanupWorktree(worktreePath);
+
+    let nextCi: CiGateResult;
+    try {
+      nextCi = await runCiGate({
+        issue: issueNumber,
+        branch,
+        repoRoot: REPO_ROOT,
+        worktreePath,
+      });
+      console.log(
+        `[wrapper] CI re-gate after fixer ${attempt}: ${nextCi.ok ? 'PASS' : `FAIL (${nextCi.packageManager} ${nextCi.failedCheck})`}`,
+      );
+    } catch (err) {
+      console.error(`[wrapper] CI re-gate threw — treating as failure:`, err);
+      nextCi = {
+        ok: false,
+        failedCheck: 'install',
+        runs: [],
+        logPath: '<ci-gate threw before logging>',
+        packageManager: detectPackageManager(REPO_ROOT),
+      };
+    }
+
+    attempts.push({
+      attempt,
+      logFilePath: fixer.logFilePath,
+      hadCommits: fixer.newCommits.length > 0,
+      ciPassed: nextCi.ok,
+      runError: fixer.runError,
+    });
+
+    // Per-attempt comment lands on the issue before we decide to loop or
+    // bail — the human gets to watch the fixer's progress in real time.
+    await postComment(
+      issueNumber,
+      formatFixerComment({
+        attempt,
+        maxAttempts: MAX_FIX_ATTEMPTS,
+        fixer,
+        ciResult: nextCi,
+      }),
+    );
+
+    currentCi = nextCi;
+    if (nextCi.ok) break;
+  }
+
+  return { finalCiResult: currentCi, attempts };
 }
 
 /**
@@ -691,6 +848,89 @@ async function processSplits(args: {
 }
 
 /**
+ * CI-failure outcome: the implementer + fixer loop couldn't get CI green.
+ * Mirrors `handleRejection` — tag the work, capture diff summary, discard the
+ * branch, file a priority follow-up carrying the CI failure context forward,
+ * comment on the original, close it.
+ *
+ * `tagged` is true if the load-bearing CI-failure tag landed. `followUpNumber`
+ * is the new issue's number when gh accepted the create; it lets the drain
+ * loop record supersession chains so a later auto-merge of the chain
+ * rehabilitates this issue's ancestors.
+ */
+async function handleCiFailure(args: {
+  issue: Issue;
+  branch: string;
+  commits: readonly { sha: string }[];
+  finalCiResult: CiGateResult;
+  fixerAttempts: readonly FixerAttempt[];
+}): Promise<{ tagged: boolean; followUpNumber?: number }> {
+  const existingTags = await listCiFailureTagsForIssue(args.issue.number, REPO_ROOT);
+  const attempt = nextCiAttemptNumber(args.issue.number, existingTags);
+  const tag = ciFailureTagName(args.issue.number, attempt);
+
+  try {
+    const failedCheck = args.finalCiResult.failedCheck ?? 'unknown';
+    await createCiFailureTag({
+      tag,
+      branch: args.branch,
+      cwd: REPO_ROOT,
+      message: `CI failure on sandcastle-drain (attempt ${attempt}, issue #${args.issue.number}). Failing check: ${args.finalCiResult.packageManager} ${failedCheck}. Fixer attempts: ${args.fixerAttempts.length}.`,
+    });
+    console.log(`[wrapper] tagged ${args.branch} as ${tag}`);
+  } catch (err) {
+    console.error(
+      `[wrapper] failed to tag ci-failed branch ${args.branch} as ${tag}:`,
+      (err as Error).message,
+    );
+    return { tagged: false };
+  }
+
+  const branchSummary = await summarizeBranchForRejection(args.branch);
+
+  if (await branchExists(args.branch)) {
+    await resetIssueState(args.branch);
+    console.log(`[wrapper] discarded branch ${args.branch}`);
+  }
+
+  const followUpBody = buildCiFailureFollowUpBody({
+    originalIssueNumber: args.issue.number,
+    ciFailureTag: tag,
+    attempt: attempt + 1,
+    finalCiResult: args.finalCiResult,
+    fixerAttempts: args.fixerAttempts,
+    changedFiles: branchSummary.changedFiles,
+    commitTitles: branchSummary.commitTitles,
+  });
+  const followUpTitle = buildCiFailureFollowUpTitle(args.issue.number, args.issue.title);
+  const followUp = await createFollowUpIssue({ title: followUpTitle, body: followUpBody });
+  if (followUp) {
+    console.log(
+      `[wrapper] filed CI-failure follow-up #${followUp.number} for #${args.issue.number}`,
+    );
+  }
+
+  await postComment(
+    args.issue.number,
+    buildOriginalIssueCiFailureComment({
+      ciFailureTag: tag,
+      attempt,
+      finalCiResult: args.finalCiResult,
+      fixerAttempts: args.fixerAttempts.length,
+      followUpIssueNumber: followUp?.number,
+      followUpIssueUrl: followUp?.url,
+    }),
+  );
+
+  if (followUp) {
+    await closeIssue(args.issue.number);
+    console.log(`[wrapper] closed #${args.issue.number} (superseded by #${followUp.number})`);
+  }
+
+  return { tagged: true, followUpNumber: followUp?.number };
+}
+
+/**
  * Auto-merge the slice: push, open PR, squash, then sweep the worktree.
  * Returns true on success. Any failure falls back to the manual `needs-review`
  * path — push errors, merge conflicts, and sweep failures are noisy in the log
@@ -927,8 +1167,7 @@ async function processIssue(
     await cleanupWorktree(worktreePath);
   }
 
-  // (g.5) CI gate — runs only when commits exist. On failure the issue goes
-  // to `needs-info` instead of `needs-review`, with the CI output attached.
+  // (g.5) CI gate — runs only when commits exist.
   let ciResult: CiGateResult | undefined;
   if (commits.length > 0) {
     console.log(`[wrapper] running CI gate for #${issue.number}`);
@@ -954,6 +1193,30 @@ async function processIssue(
     }
   }
 
+  // (g.6) Fix loop — if CI is red and we have a real failed check to point
+  // the fixer at, spawn up to MAX_FIX_ATTEMPTS sandcastle runs to recover the
+  // branch. Skipped when the gate threw before running anything (no excerpt
+  // to give the fixer) — that path stays on the manual `needs-info` rails.
+  let fixerAttempts: readonly FixerAttempt[] = [];
+  if (
+    commits.length > 0 &&
+    ciResult &&
+    !ciResult.ok &&
+    !isRateLimitError(runError) &&
+    !containsRateLimit(stdout) &&
+    ciResult.runs.length > 0
+  ) {
+    const loopResult = await runFixLoop({
+      issueNumber: issue.number,
+      branch,
+      ghToken,
+      worktreePath,
+      initialCiResult: ciResult,
+    });
+    ciResult = loopResult.finalCiResult;
+    fixerAttempts = loopResult.attempts;
+  }
+
   // (e) Status comment — best effort, posted regardless of outcome.
   const comment = buildStatusComment({
     status,
@@ -964,17 +1227,22 @@ async function processIssue(
     pushedWarning: pushed,
     siblingContext: { count: siblings.length, tokens: siblingContextTokens },
     ciResult,
+    fixerAttempts,
     attempts: { current: attempt, max: MAX_ATTEMPTS_PER_ISSUE },
   });
   await postComment(issue.number, comment);
 
-  // (e.5) Reviewer pass — only when the implementer made commits and the run
-  // didn't hit a rate limit. The reviewer is advisory for the rubric, but its
-  // PASS verdict combined with a green CI gate also unlocks the auto-merge
-  // path at (e.6). Skipped on rate-limit to avoid burning more quota; skipped
-  // on no-commits because there's nothing to review.
+  // (e.5) Reviewer pass — only when the implementer made commits, CI is
+  // green (after the fix loop above, if any), and the run didn't hit a rate
+  // limit. Running the reviewer on CI-red code wastes tokens producing a
+  // verdict against a state that will never ship — gate on `ciResult.ok`.
   let reviewerOutput: ReviewerOutput | undefined;
-  if (commits.length > 0 && !isRateLimitError(runError) && !containsRateLimit(stdout)) {
+  if (
+    commits.length > 0 &&
+    ciResult?.ok === true &&
+    !isRateLimitError(runError) &&
+    !containsRateLimit(stdout)
+  ) {
     reviewerOutput = await runAndPostReviewer({
       issueNumber: issue.number,
       branch,
@@ -1008,6 +1276,32 @@ async function processIssue(
     rejectionFollowUp = rejection.followUpNumber;
   }
 
+  // (e.7b) CI-failure loop: commits + CI still red after the fixer attempts
+  // exhausted → tag the work as `ci-failed/issue-N-attempt-K`, discard the
+  // branch, file a priority follow-up carrying the CI failure context.
+  // Suppressed when rejection already fired (mutually exclusive — the
+  // rejection follow-up subsumes any CI-failure follow-up on the same
+  // commits) and when no commits exist (nothing to tag).
+  let ciFailed = false;
+  let ciFailureFollowUp: number | undefined;
+  if (
+    !rejected &&
+    commits.length > 0 &&
+    ciResult !== undefined &&
+    ciResult.ok === false &&
+    fixerAttempts.length > 0
+  ) {
+    const ciFailure = await handleCiFailure({
+      issue,
+      branch,
+      commits,
+      finalCiResult: ciResult,
+      fixerAttempts,
+    });
+    ciFailed = ciFailure.tagged;
+    ciFailureFollowUp = ciFailure.followUpNumber;
+  }
+
   // (e.8) Split protocol: act on `.sandcastle-drain/splits.json` captured at (f.5).
   // Files each entry as a `sandcastle` + `priority` follow-up so the next
   // drain iteration picks them up. Suppressed when rejection fired — the
@@ -1034,13 +1328,18 @@ async function processIssue(
     // Rejection loop already commented on the original issue and filed a
     // follow-up. The original needs no further state — the follow-up is now
     // the active work item.
+  } else if (ciFailed) {
+    // CI-failure loop already commented and filed a priority follow-up. Same
+    // shape as rejection — no further label state on the original.
   } else if (commits.length > 0 && ciResult?.ok === true) {
     await addLabel(issue.number, NEEDS_REVIEW_LABEL);
   } else {
-    // Three paths funnel here:
+    // Funnels:
     //   1. No commits + bail-out (COMPLETE without commits) or hard failure.
-    //   2. Commits exist but the CI gate is red.
-    //   3. Commits exist but the CI gate threw before deciding.
+    //   2. Commits exist but the CI gate threw before producing a real result
+    //      (so the fixer never ran — no excerpt to feed it).
+    //   3. Commits exist + CI red but the fixer loop never engaged because of
+    //      a rate-limit short-circuit (rare — caught above).
     // All want a human eye.
     await addLabel(issue.number, NEEDS_INFO_LABEL);
   }
@@ -1060,15 +1359,18 @@ async function processIssue(
   return {
     issue: issue.number,
     status,
-    // After auto-merge or rejection, the branch is gone — omit it from the
-    // summary so the per-issue line and review hint don't point at a
-    // dangling ref.
-    branch: commits.length > 0 && !autoMerged && !rejected ? branch : undefined,
+    // After auto-merge, rejection, or CI-failure follow-up the branch is
+    // gone — omit it from the summary so the per-issue line and review hint
+    // don't point at a dangling ref.
+    branch: commits.length > 0 && !autoMerged && !rejected && !ciFailed ? branch : undefined,
     commitCount: commits.length,
     ciOk: ciResult?.ok,
     autoMerged,
     rejected,
     rejectionFollowUp,
+    ciFailed,
+    ciFailureFollowUp,
+    fixerAttempts: fixerAttempts.length,
     split,
     attempt,
   };
@@ -1132,9 +1434,14 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
       }
 
       // Record the supersession so a future auto-merge of the follow-up
-      // (or a deeper descendant) can roll forward through this issue.
+      // (or a deeper descendant) can roll forward through this issue. Both
+      // reviewer-rejection and CI-failure follow-ups use the same chain —
+      // either path means "this issue's work was carried forward to N+1".
       if (summary.rejected && summary.rejectionFollowUp !== undefined) {
-        supersedesChain.recordRejection(issue.number, summary.rejectionFollowUp);
+        supersedesChain.recordSupersession(issue.number, summary.rejectionFollowUp);
+      }
+      if (summary.ciFailed && summary.ciFailureFollowUp !== undefined) {
+        supersedesChain.recordSupersession(issue.number, summary.ciFailureFollowUp);
       }
 
       // Capture sibling context for subsequent iterations. Only branches with
@@ -1152,15 +1459,20 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
         );
       }
 
-      // After a rejection or split, refetch so the priority follow-ups just
-      // filed by `handleRejection()` / `processSplits()` land at the front of
-      // the remaining queue. `fetchQueue` naturally excludes already-
-      // processed issues (the wrapper removed their `sandcastle` label) and
-      // `sortQueue` floats `priority` first. Splice instead of replace so
-      // already-iterated indices stay valid.
-      const filedFollowUps = summary.rejected || (summary.split && summary.split.count > 0);
+      // After a rejection, CI-failure follow-up, or split, refetch so the
+      // priority follow-ups just filed land at the front of the remaining
+      // queue. `fetchQueue` naturally excludes already-processed issues (the
+      // wrapper removed their `sandcastle` label) and `sortQueue` floats
+      // `priority` first. Splice instead of replace so already-iterated
+      // indices stay valid.
+      const filedFollowUps =
+        summary.rejected || summary.ciFailed || (summary.split && summary.split.count > 0);
       if (filedFollowUps) {
-        const reason = summary.rejected ? 'rejection' : 'split';
+        const reason = summary.rejected
+          ? 'rejection'
+          : summary.ciFailed
+            ? 'ci-failure'
+            : 'split';
         try {
           const refreshed = await fetchQueue();
           const refreshedList = refreshed.map((r) => '#' + r.number).join(', ') || '(empty)';
