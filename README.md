@@ -78,15 +78,26 @@ Both files / directories live in the **host project's** working directory, not i
 
 ## Configuration knobs that exist today
 
-None, intentionally. The wrapper is opinionated:
+One, narrowly scoped. The wrapper is otherwise opinionated:
 
 - Model is pinned to `claude-opus-4-7`.
 - Label set is fixed (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`).
 - Paths are fixed (`<host-cwd>/.sandcastle-drain/staged/`, `<host-cwd>/.sandcastle-drain/worktrees/`, `<host-cwd>/.sandcastle-drain/logs/`).
-- Idle timeout: 10 minutes per run. Wall-clock cap: 90 minutes per run. One auto-retry on idle / wall-clock timeout.
-- Reviewer budget: 5 minute idle, 30 minute wall-clock.
+- Implementer idle timeout: 10 minutes per run, **overridable via `--idle-timeout <seconds>`**. Wall-clock cap: 90 minutes per run. One auto-retry on idle / wall-clock timeout.
+- Reviewer / fixer budget: 5 minute idle, 30 minute wall-clock. Not user-tunable.
 
-If you need different values, fork the wrapper or open an issue. Future versions may expose a `sandcastle.config.ts` if users need it; today there is no escape hatch beyond editing source.
+The `--idle-timeout` flag exists for one reason: a fresh-worktree cold start (especially a full `pnpm install` on a now-large monorepo) can legitimately exceed 10 minutes. If your runs are dying with `AgentIdleTimeoutError` during setup before the agent produces any output, raising the flag is the right fix. Don't raise it to mask a hanging hook — see the next section.
+
+## Sandbox environment
+
+The implementer, fixer, and reviewer agents all run inside the sandcastle Docker sandbox with two env vars set on top of whatever the image provides:
+
+- `HUSKY=0` — **disables every git hook inside the sandbox.** Husky's recommended bypass, no `--no-verify` argument needed at the commit call site. The rationale: the wrapper's CI gate (`pnpm run typecheck && pnpm run lint && pnpm run test` in a clean worktree) is the canonical check. A downstream `pre-commit` hook running the same checks is redundant AND catastrophic — it produces no stdout the idle watcher can see, so a slow hook silently burns the idle budget and kills the run with no diagnostic. The wrapper's CI gate + fixer loop covers the same surface and reports failures explicitly.
+- `CI=true` — parallel signal a lot of tools respect for "unattended run, skip interactive prompts."
+
+If your project has a `pre-commit` hook that does something the wrapper's CI gate genuinely doesn't replicate (e.g. secret scanning), move it to a `pre-push` hook the wrapper never invokes, or run it as a separate `package.json` script that the CI gate could pick up.
+
+If you need to fork off these defaults for other reasons, fork the wrapper or open an issue. Future versions may expose a `sandcastle.config.ts` if users need it; today there is no escape hatch beyond editing source.
 
 ## Versioning discipline
 

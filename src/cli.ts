@@ -29,7 +29,11 @@ Commands:
   sweep <issue>       Post-merge cleanup: remove worktree, delete local branch
 
 Options:
-  -h, --help          Show this help message
+  -h, --help                  Show this help message
+  --idle-timeout <seconds>    (drain only) Override the implementer idle timeout
+                              (default 600). Raise this for projects whose first
+                              tool calls in a fresh worktree legitimately exceed
+                              10 minutes (e.g. huge install or codegen step).
 
 All paths resolve relative to the current working directory.`;
 
@@ -51,6 +55,41 @@ function parseIssueArg(subcommand: string, arg: string | undefined): number {
     fail(`Usage: sandcastle-drain ${subcommand} <issue-number>  (e.g. \`sandcastle-drain ${subcommand} 3\`)`);
   }
   return Number(arg);
+}
+
+// Minimum guards against foot-guns (`--idle-timeout 0` would immediately kill
+// every run); upper bound is left open because legitimate slow paths exist
+// (cold pnpm install on a now-large monorepo, heavy codegen).
+const MIN_IDLE_TIMEOUT_SECONDS = 60;
+
+// Parses `drain`-subcommand flags. Currently the only flag is `--idle-timeout
+// <seconds>` (also accepts `--idle-timeout=<seconds>`). Unknown flags fail
+// fast so a typo doesn't silently get ignored mid-run.
+export function parseDrainFlags(args: readonly string[]): { idleTimeoutSeconds?: number } {
+  const out: { idleTimeoutSeconds?: number } = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    let value: string | undefined;
+    if (arg === '--idle-timeout') {
+      value = args[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--idle-timeout=')) {
+      value = arg.slice('--idle-timeout='.length);
+    } else {
+      fail(`Unknown drain flag: ${arg}`, { showHelp: true });
+    }
+    if (!value || !/^\d+$/.test(value)) {
+      fail(`--idle-timeout expects a positive integer (got: ${value ?? '<missing>'})`);
+    }
+    const seconds = Number(value);
+    if (seconds < MIN_IDLE_TIMEOUT_SECONDS) {
+      fail(
+        `--idle-timeout must be at least ${MIN_IDLE_TIMEOUT_SECONDS}s (got: ${seconds}). Setting it below the cold-start budget guarantees timeouts.`,
+      );
+    }
+    out.idleTimeoutSeconds = seconds;
+  }
+  return out;
 }
 
 function reportUnexpectedError(when: string, err: unknown): never {
@@ -80,8 +119,10 @@ async function main(): Promise<void> {
   // Validate args before running prereqs so usage errors don't depend on
   // `gh` being authed — a missing issue number should fail fast with help text.
   let issue: number | undefined;
+  let drainFlags: { idleTimeoutSeconds?: number } = {};
   switch (subcommand) {
     case 'drain':
+      drainFlags = parseDrainFlags(rest);
       break;
     case 'ship':
     case 'sweep':
@@ -112,7 +153,7 @@ async function main(): Promise<void> {
       // rendered in memory by `src/render-prompt.ts` and never materialize on
       // the host filesystem.
       await stage(process.cwd());
-      await runDrain({ token });
+      await runDrain({ token, idleTimeoutSeconds: drainFlags.idleTimeoutSeconds });
       return;
     case 'ship':
       try {

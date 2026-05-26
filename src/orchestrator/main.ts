@@ -93,7 +93,12 @@ const NEEDS_INFO_LABEL = 'needs-info';
 const SKIPPED_THIS_RUN_LABEL = 'skipped-this-run';
 
 // Idle timeout: 10 minutes of silence kills the run. Wall-clock cap: 90 minutes.
-const IDLE_TIMEOUT_SECONDS = 600;
+// The implementer idle timeout can be overridden via the `--idle-timeout`
+// CLI flag (threaded through runDrain → drainQueue → processIssue); the
+// fixer/reviewer budgets below are deliberately not user-tunable because
+// they're bounded scope (read + edit / read + verdict) and a slow hook there
+// almost always means a slow hook in the implementer too.
+const DEFAULT_IDLE_TIMEOUT_SECONDS = 600;
 const WALL_CLOCK_TIMEOUT_MS = 90 * 60 * 1000;
 
 // One initial attempt + one auto-retry on idle/wall-clock timeout with no
@@ -964,6 +969,7 @@ async function processIssue(
   ghToken: string,
   siblings: readonly SiblingSummary[],
   failedThisRun: ReadonlySet<number>,
+  idleTimeoutSeconds: number,
 ): Promise<RunSummary> {
   const branch = `agent/issue-${issue.number}`;
   console.log(`\n[wrapper] === Issue #${issue.number}: ${issue.title} ===`);
@@ -1091,11 +1097,20 @@ async function processIssue(
           // `!gh issue view ...` block, and by any agent-side `gh issue comment`)
           // the same auth as the host. Without it, gh inside the container
           // hits its "please run gh auth login" path.
-          env: { GH_TOKEN: ghToken },
+          //
+          // HUSKY=0 disables every git hook inside the sandbox. The wrapper's
+          // own CI gate (typecheck + lint + test in a clean worktree) is the
+          // canonical check — a downstream pre-commit hook running the same
+          // checks is redundant AND catastrophic: it produces no stdout the
+          // idle watcher can see, so a slow hook silently burns the 600s
+          // budget and kills the run with no diagnostic. CI=true is a
+          // parallel signal a lot of tools respect for "unattended run, no
+          // interactive prompts."
+          env: { GH_TOKEN: ghToken, HUSKY: '0', CI: 'true' },
         }),
         prompt,
         branchStrategy: { type: 'branch', branch },
-        idleTimeoutSeconds: IDLE_TIMEOUT_SECONDS,
+        idleTimeoutSeconds,
         signal: AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS),
       });
     } catch (err) {
@@ -1391,7 +1406,11 @@ function printSummary(summaries: RunSummary[]): void {
   console.log(formatSummary(summaries));
 }
 
-async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary[]> {
+async function drainQueue(
+  initial: Issue[],
+  ghToken: string,
+  idleTimeoutSeconds: number,
+): Promise<RunSummary[]> {
   const summaries: RunSummary[] = [];
   const siblings: SiblingSummary[] = [];
   // Issues that did not auto-merge this run. Dependents named in their bodies'
@@ -1410,7 +1429,13 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
   while (i < queue.length) {
     const issue = queue[i];
     try {
-      const summary = await processIssue(issue, ghToken, siblings, failedThisRun);
+      const summary = await processIssue(
+        issue,
+        ghToken,
+        siblings,
+        failedThisRun,
+        idleTimeoutSeconds,
+      );
       summaries.push(summary);
 
       // Rehabilitate ancestors when the tail of a supersession chain lands.
@@ -1524,8 +1549,19 @@ async function drainQueue(initial: Issue[], ghToken: string): Promise<RunSummary
  * On an empty queue, returns immediately; otherwise iterates the prioritized
  * queue and prints a summary at the end.
  */
-export async function runDrain(args: { token: string }): Promise<void> {
+export async function runDrain(args: {
+  token: string;
+  // Override for DEFAULT_IDLE_TIMEOUT_SECONDS. Threaded from the CLI's
+  // `--idle-timeout <seconds>` flag. Affects the implementer agent only —
+  // fixer/reviewer keep their tighter, fixed budgets.
+  idleTimeoutSeconds?: number;
+}): Promise<void> {
   console.log('[wrapper] sandcastle-drain starting');
+
+  const idleTimeoutSeconds = args.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS;
+  if (args.idleTimeoutSeconds !== undefined) {
+    console.log(`[wrapper] implementer idle-timeout overridden to ${idleTimeoutSeconds}s`);
+  }
 
   const queue = await fetchQueue();
   if (queue.length === 0) {
@@ -1536,6 +1572,6 @@ export async function runDrain(args: { token: string }): Promise<void> {
     `[wrapper] Queue: ${queue.length} issue(s) — ${queue.map((i) => `#${i.number}`).join(', ')}`,
   );
 
-  const summaries = await drainQueue(queue, args.token);
+  const summaries = await drainQueue(queue, args.token, idleTimeoutSeconds);
   printSummary(summaries);
 }

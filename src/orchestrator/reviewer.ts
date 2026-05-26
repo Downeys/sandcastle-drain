@@ -262,7 +262,11 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
           { hostPath: args.hostCredsPath, sandboxPath: args.sandboxCredsPath },
           { hostPath: args.stagedHostPath, sandboxPath: STAGED_SANDBOX_PATH, readonly: true },
         ],
-        env: { GH_TOKEN: args.ghToken },
+        // HUSKY=0 / CI=true: kept in sync with implementer/fixer for parity.
+        // The reviewer is read-only and doesn't commit, so this is belt-and-
+        // suspenders — but if a future change has the reviewer touch git, the
+        // env stays correct (see implementer `run()` call site in main.ts).
+        env: { GH_TOKEN: args.ghToken, HUSKY: '0', CI: 'true' },
       }),
       prompt,
       branchStrategy: { type: 'branch', branch: args.branch },
