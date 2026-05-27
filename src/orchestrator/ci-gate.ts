@@ -92,7 +92,7 @@ export function detectPackageManager(repoRoot: string): PackageManager {
 
 // Frozen-install args per package manager. The intent across all three is the
 // same: refuse to install if the lockfile is out of date.
-function installArgs(pm: PackageManager): readonly string[] {
+export function installArgs(pm: PackageManager): readonly string[] {
   switch (pm) {
     case 'npm':
       return ['ci'];

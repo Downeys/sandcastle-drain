@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   detectPackageManager,
   determineCiOk,
+  installArgs,
   needsInstall,
   type CiCheckRun,
 } from './ci-gate.js';
@@ -119,6 +120,20 @@ describe('needsInstall', () => {
   it('yarn: false when node_modules exists', () => {
     mkdirSync(join(tmpRoot, 'node_modules'));
     expect(needsInstall(tmpRoot, 'yarn')).toBe(false);
+  });
+});
+
+describe('installArgs', () => {
+  it('returns `ci` for npm', () => {
+    expect(installArgs('npm')).toEqual(['ci']);
+  });
+
+  it('returns `install --frozen-lockfile` for pnpm', () => {
+    expect(installArgs('pnpm')).toEqual(['install', '--frozen-lockfile']);
+  });
+
+  it('returns `install --frozen-lockfile` for yarn', () => {
+    expect(installArgs('yarn')).toEqual(['install', '--frozen-lockfile']);
   });
 });
 

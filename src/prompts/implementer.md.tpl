@@ -34,6 +34,14 @@ Read the issue carefully and decide what kind of work it requires:
 
 If the issue is genuinely too big for a single run, commit what does fit and write the rest into `.sandcastle-drain/splits.json` — see **Splitting a too-big issue** below. Don't half-solve it.
 
+## Tests you run vs. tests the wrapper runs
+
+Targeted only. When you add or change a test, run **just that test file** (e.g. `npx vitest run path/to/added.test.ts`) to confirm it does what you intended. That's it.
+
+**Do not run the full project test suite.** No `npm test`, no `pnpm test`, no bare `vitest`, no `npm run test`. The wrapper runs `typecheck` + `lint` + the full `test` suite in a clean worktree after you emit `<promise>COMPLETE</promise>` — that's the canonical broad-impact check. Running it again here is redundant, eats the idle budget, and is the most common reason a run times out before it can land.
+
+If your scoped test passes and you'd otherwise reach for the full suite "just to be sure," stop and commit instead. The CI gate is the safety net. (This is the autonomous-only tightening of [.sandcastle-drain/staged/principles/claude-code-modes.md](.sandcastle-drain/staged/principles/claude-code-modes.md) "Running tests before commit".)
+
 ## Commit messages
 
 Use a Conventional Commits prefix that fits the work — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:` — and put `Closes #{{ISSUE_NUMBER}}` in the message body so the merge auto-closes the issue:

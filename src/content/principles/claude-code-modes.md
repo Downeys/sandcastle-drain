@@ -27,7 +27,7 @@ These rules tighten when Claude Code runs unattended via sandcastle-drain.
 | **Summarize-don't-paste tool output** | Guidance | **Hard rule** — summarize relevant lines before next reasoning step unless byte-exact content is needed |
 | **Asking for clarification** | Free to ask | **Forbidden** — emit `<promise>COMPLETE</promise>` with the question instead. The wrapper labels the issue `needs-info`. |
 | **`git push` / `gh pr create`** | Confirm with user (per global CLAUDE.md) | **Forbidden** — wrapper defensively checks and warns if the agent did it anyway |
-| **Running tests before commit** | Guidance — can skip on user's say-so | **Hard rule** — when introducing testable behavior, tests run before commit. No soft-skip. |
+| **Running tests before commit** | Guidance — can skip on user's say-so | **Targeted only.** When you add or change a test, run **just that test file** (e.g. `npx vitest run path/to/added.test.ts`) to confirm it passes. Never run the full suite (`npm test`, `pnpm test`, bare `vitest`) — the wrapper's CI gate runs typecheck + lint + the whole `test` suite in a clean worktree post-run, and rerunning it here is the most common cause of idle-timeout death. |
 | **Risky / destructive actions** | Confirm with user | **Don't take them.** No `git reset --hard`, no force-push, no destructive shell commands |
 
 ## What to do when an issue conflicts with these rules

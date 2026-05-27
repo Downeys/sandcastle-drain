@@ -6,7 +6,7 @@
  * Invoked by `src/cli.ts` as the `drain` subcommand. `runDrain` is the only
  * export the CLI calls; the rest of the file is internal to drain orchestration.
  */
-import { run, claudeCode } from '@ai-hero/sandcastle';
+import { run, claudeCode, type SandboxHooks } from '@ai-hero/sandcastle';
 import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { execa } from 'execa';
 import { existsSync } from 'node:fs';
@@ -41,7 +41,14 @@ import {
 } from './worktree-cleanup.js';
 import { formatReviewerComment, formatReviewerErrorComment, runReviewer } from './reviewer.js';
 import type { ReviewerOutput, ReviewerVerdict } from './reviewer.js';
-import { detectPackageManager, formatCiSection, runCiGate, type CiGateResult } from './ci-gate.js';
+import {
+  detectPackageManager,
+  formatCiSection,
+  installArgs,
+  runCiGate,
+  type CiGateResult,
+  type PackageManager,
+} from './ci-gate.js';
 import {
   formatFixerComment,
   formatFixerSection,
@@ -118,6 +125,27 @@ const REVIEWER_WALL_CLOCK_TIMEOUT_MS = 30 * 60 * 1000;
 const FIXER_IDLE_TIMEOUT_SECONDS = REVIEWER_IDLE_TIMEOUT_SECONDS;
 const FIXER_WALL_CLOCK_TIMEOUT_MS = REVIEWER_WALL_CLOCK_TIMEOUT_MS;
 const MAX_FIX_ATTEMPTS = 2;
+
+// Pre-agent dependency install runs inside the sandbox before the agent boots,
+// via sandcastle's `hooks.sandbox.onSandboxReady`. Hoisting install here keeps
+// its cost off the agent's idle/wall-clock budget, and running it inside the
+// container guarantees Linux-native binaries (esbuild, sharp, …) regardless of
+// host OS. 15 min covers a cold pnpm install on a sizeable monorepo with room
+// to spare; a hook timeout aborts the run before the agent ever boots.
+const PRE_AGENT_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
+
+export function buildPreAgentInstallHook(pm: PackageManager): SandboxHooks {
+  return {
+    sandbox: {
+      onSandboxReady: [
+        {
+          command: `${pm} ${installArgs(pm).join(' ')}`,
+          timeoutMs: PRE_AGENT_INSTALL_TIMEOUT_MS,
+        },
+      ],
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1110,6 +1138,7 @@ async function processIssue(
         }),
         prompt,
         branchStrategy: { type: 'branch', branch },
+        hooks: buildPreAgentInstallHook(detectPackageManager(REPO_ROOT)),
         idleTimeoutSeconds,
         signal: AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS),
       });
