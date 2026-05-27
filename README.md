@@ -6,7 +6,7 @@ A wrapper around [`@ai-hero/sandcastle`](https://github.com/mattpocock/sandcastl
 
 The wrapper relies on the host machine to supply these. None of them are installed for you.
 
-- **Docker installed and running.** The agent runs inside the container declared in `docker/Dockerfile` (Node 22 + git + gh + Claude Code CLI + Playwright + Chromium).
+- **Docker installed and running.** The wrapper builds and manages its own sandbox image, tagged `sandcastle:<host-cwd-basename>`, directly from the Dockerfile bundled in this package (Node 22 + git + gh + Claude Code CLI + Playwright + Chromium + Corepack-enabled pnpm/yarn shims). Build runs automatically on the first `npx sandcastle-drain drain` and rebuilds only when the bundled Dockerfile changes (detected via a SHA-256 content label). You do **not** need to run `sandcastle init` or `sandcastle docker build-image`; any `.sandcastle/Dockerfile` in the host project is ignored.
 - **Node.js 20+** on the host (the wrapper itself is a Node CLI).
 - **`gh` CLI installed and `gh auth login` complete.** The wrapper shells out to `gh issue list / edit / comment / create` and `gh pr create / merge`.
 - **Claude Code CLI installed locally**, with OAuth credentials persisted to `~/.config/sandcastle-claude-creds/`. The wrapper bind-mounts that directory into every sandbox so the agent reuses your Pro/Max subscription. Bootstrap once with:

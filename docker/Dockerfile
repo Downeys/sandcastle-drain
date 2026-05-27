@@ -48,3 +48,11 @@ WORKDIR /home/agent
 # In worktree sandbox mode, Sandcastle bind-mounts the git worktree at the
 # project root and overrides the working directory at container start.
 ENTRYPOINT ["sleep", "infinity"]
+
+# Content hash of this Dockerfile, baked in as a label so the wrapper's
+# probeImage prereq can detect a stale image and rebuild. The build arg
+# is populated from src/orchestrator/prereqs.ts; the default keeps a raw
+# `docker build` (no --build-arg) from producing an image that compares
+# equal to anything.
+ARG DOCKERFILE_SHA=unknown
+LABEL sandcastle-drain.dockerfile-sha=$DOCKERFILE_SHA

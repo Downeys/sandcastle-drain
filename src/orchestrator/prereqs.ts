@@ -9,9 +9,11 @@
  * and every subcommand sees the same view of "where the host project lives".
  */
 import { execa } from 'execa';
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Host-project root: when `npx sandcastle-drain` is run, this is the user's project
 // directory (where their `.sandcastle-drain/`, `.git/`, etc. live), NOT the installed
@@ -27,6 +29,18 @@ export const IMAGE_NAME = `sandcastle:${basename(REPO_ROOT)}`;
 
 export const HOST_CREDS_PATH = join(homedir(), '.config', 'sandcastle-claude-creds');
 export const SANDBOX_CREDS_PATH = '/home/agent/.claude';
+
+// Path to the Dockerfile bundled inside this package. Same relative path
+// resolves correctly from both `src/orchestrator/prereqs.ts` (dev via tsx)
+// and `dist/orchestrator/prereqs.js` (installed npm package), because
+// `docker/Dockerfile` sits at the package root in both layouts and is
+// declared in package.json#files. probeImage builds the wrapper's sandbox
+// image directly from this file — sandcastle's default `.sandcastle/`
+// directory in the host project is deliberately not consulted.
+export const BUNDLED_DOCKERFILE_PATH = fileURLToPath(
+  new URL('../../docker/Dockerfile', import.meta.url),
+);
+const DOCKERFILE_SHA_LABEL = 'sandcastle-drain.dockerfile-sha';
 
 // Skills the implementer prompt depends on. probeSkills enforces these exist
 // under `.claude/skills/` before any subcommand runs.
@@ -179,6 +193,62 @@ export async function probeLabels(): Promise<string | null> {
   return null;
 }
 
+// Ensures the sandbox image (sandcastle:<basename(REPO_ROOT)>) exists and was
+// built from the Dockerfile bundled in this package version. Compares a
+// SHA-256 of the bundled Dockerfile against a label baked into the image at
+// build time; rebuilds when the label is missing or mismatched.
+//
+// Why this exists: sandcastle's docker provider only starts containers, it
+// doesn't build images, and its standalone `docker build-image` CLI reads
+// `<cwd>/.sandcastle/Dockerfile` — a file the wrapper has no control over.
+// Without this probe, fixes shipped in `docker/Dockerfile` (e.g. the Corepack
+// lines that make pnpm/yarn install hooks work) never reach the running
+// image.
+export async function probeImage(): Promise<string | null> {
+  const dockerfile = readFileSync(BUNDLED_DOCKERFILE_PATH);
+  const expectedSha = createHash('sha256').update(dockerfile).digest('hex');
+
+  const inspectResult = await execa(
+    'docker',
+    [
+      'image',
+      'inspect',
+      '--format',
+      `{{ index .Config.Labels "${DOCKERFILE_SHA_LABEL}" }}`,
+      IMAGE_NAME,
+    ],
+    { reject: false },
+  );
+  if (inspectResult.exitCode === 0 && inspectResult.stdout.trim() === expectedSha) {
+    console.log(`[wrapper] image ${IMAGE_NAME} up to date`);
+    return null;
+  }
+
+  const reason = inspectResult.exitCode === 0 ? 'stale' : 'missing';
+  console.log(
+    `[wrapper] image ${IMAGE_NAME} is ${reason}; rebuilding from bundled Dockerfile (one-time, ~5 min)…`,
+  );
+  const buildResult = await execa(
+    'docker',
+    [
+      'build',
+      '--build-arg',
+      `DOCKERFILE_SHA=${expectedSha}`,
+      '-f',
+      BUNDLED_DOCKERFILE_PATH,
+      '-t',
+      IMAGE_NAME,
+      dirname(BUNDLED_DOCKERFILE_PATH),
+    ],
+    { stdio: 'inherit', reject: false },
+  );
+  if (buildResult.exitCode !== 0) {
+    return `docker build failed for ${IMAGE_NAME} (exit ${buildResult.exitCode}). Bundled Dockerfile: ${BUNDLED_DOCKERFILE_PATH}`;
+  }
+  console.log(`[wrapper] image ${IMAGE_NAME} rebuilt`);
+  return null;
+}
+
 /**
  * Runs every startup probe in order. On any failure, logs the actionable error
  * to stderr and exits the process with code 1. On success, returns the gh
@@ -195,6 +265,15 @@ export async function runAllPrereqs(): Promise<{ token: string }> {
     console.error(
       `sandcastle-drain: missing required skills under .claude/skills/: ${missingSkills.join(', ')}. Install with:\n  npx skills@latest add ${installArgs}`,
     );
+    process.exit(1);
+  }
+
+  // Image goes before auth: the OAuth bootstrap step (in probeAuth's error
+  // message) shells out to `docker run … sandcastle:<dir> claude login`, so
+  // the image must exist before a fresh user can complete that bootstrap.
+  const imageError = await probeImage();
+  if (imageError) {
+    console.error(`sandcastle-drain: ${imageError}`);
     process.exit(1);
   }
 
