@@ -15,6 +15,14 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
   && apt-get update && apt-get install -y gh \
   && rm -rf /var/lib/apt/lists/*
 
+# Enable Corepack so the pre-agent install hook can run `pnpm` / `yarn` on
+# projects that use them. Shims are written to /usr/local/bin (root-only),
+# so this must run before `USER agent`. The download-prompt env var keeps
+# the first invocation non-interactive — sandcastle's exec has no TTY, and
+# a hung prompt would silently consume the 15-min install timeout.
+RUN corepack enable
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
 # Install Playwright + Chromium system dependencies and the browser itself.
 # Run as root before USER agent so apt-get can install libs. Browsers go to
 # a world-readable shared path so the non-root agent user can launch them.
