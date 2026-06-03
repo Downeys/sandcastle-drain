@@ -18,7 +18,7 @@ import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { detectRubricFlags, STAGED_SANDBOX_PATH } from '../stage.js';
-import { REPO_ROOT } from './prereqs.js';
+import { REPO_ROOT, sandboxPnpmEnv } from './prereqs.js';
 import { renderPrompt } from '../render-prompt.js';
 
 export type ReviewerVerdict = 'PASS' | 'FAIL';
@@ -266,7 +266,13 @@ export async function runReviewer(args: RunReviewerArgs): Promise<ReviewerRunRes
         // The reviewer is read-only and doesn't commit, so this is belt-and-
         // suspenders — but if a future change has the reviewer touch git, the
         // env stays correct (see implementer `run()` call site in main.ts).
-        env: { GH_TOKEN: args.ghToken, HUSKY: '0', CI: 'true' },
+        // sandboxPnpmEnv() likewise mirrors the install sites (no-op off-Windows).
+        env: {
+          ...sandboxPnpmEnv(),
+          GH_TOKEN: args.ghToken,
+          HUSKY: '0',
+          CI: 'true',
+        },
       }),
       prompt,
       branchStrategy: { type: 'branch', branch: args.branch },

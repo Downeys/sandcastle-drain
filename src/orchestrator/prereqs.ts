@@ -30,6 +30,34 @@ export const IMAGE_NAME = `sandcastle:${basename(REPO_ROOT)}`;
 export const HOST_CREDS_PATH = join(homedir(), '.config', 'sandcastle-claude-creds');
 export const SANDBOX_CREDS_PATH = '/home/agent/.claude';
 
+// pnpm builds each package by extracting it to a temp dir inside its virtual
+// store ('<project>/node_modules/.pnpm') and `rename`-ing it into place. On
+// Windows hosts the agent worktree is bind-mounted into the Linux container
+// through Docker Desktop's virtiofs/9p layer, which rejects those renames with
+// EACCES even when POSIX ownership is correct — so the pre-agent
+// `pnpm install --frozen-lockfile` aborts partway (on a different package each
+// run) and the sandbox never finishes setting up. Pointing pnpm's virtual
+// store at a path on the container's own Linux filesystem, outside the
+// bind-mounted workspace (mounted at /home/agent/workspace), moves every rename
+// off the mount; pnpm then only creates lightweight symlinks back on the mount,
+// which the layer handles. Verified to take a cold install from "dies < 75
+// packages" to a clean completion. This is the creation-side counterpart to the
+// teardown-side Windows symlink-farm issue documented in
+// content/agent-docs/sandcastle-windows-cleanup.md.
+export const SANDBOX_VIRTUAL_STORE_DIR = '/home/agent/.pnpm-vstore';
+
+// In-sandbox env that makes pnpm install work against a Windows-host bind mount.
+// No-op on non-Windows hosts, where the worktree bind mount is native and pnpm's
+// renames succeed. Spread into every `docker({ env })` that runs a package
+// install (implementer, fixer, reviewer). `platform` is injectable for tests.
+export function sandboxPnpmEnv(
+  platform: NodeJS.Platform = process.platform,
+): Record<string, string> {
+  return platform === 'win32'
+    ? { npm_config_virtual_store_dir: SANDBOX_VIRTUAL_STORE_DIR }
+    : {};
+}
+
 // Path to the Dockerfile bundled inside this package. Same relative path
 // resolves correctly from both `src/orchestrator/prereqs.ts` (dev via tsx)
 // and `dist/orchestrator/prereqs.js` (installed npm package), because
