@@ -16,6 +16,7 @@ import {
   IMAGE_NAME,
   REPO_ROOT,
   SANDBOX_CREDS_PATH,
+  sandboxPnpmEnv,
 } from './prereqs.js';
 import { STAGED_DIR_RELATIVE, STAGED_SANDBOX_PATH } from '../stage.js';
 import { renderPrompt } from '../render-prompt.js';
@@ -1134,7 +1135,11 @@ async function processIssue(
           // budget and kills the run with no diagnostic. CI=true is a
           // parallel signal a lot of tools respect for "unattended run, no
           // interactive prompts."
-          env: { GH_TOKEN: ghToken, HUSKY: '0', CI: 'true' },
+          //
+          // sandboxPnpmEnv() relocates pnpm's virtual store off the Windows
+          // host bind mount so the pre-agent install doesn't EACCES-abort (no-op
+          // on non-Windows hosts) — see its definition in prereqs.ts.
+          env: { ...sandboxPnpmEnv(), GH_TOKEN: ghToken, HUSKY: '0', CI: 'true' },
         }),
         prompt,
         branchStrategy: { type: 'branch', branch },

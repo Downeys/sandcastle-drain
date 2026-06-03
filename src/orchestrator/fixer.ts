@@ -22,6 +22,7 @@ import { docker } from '@ai-hero/sandcastle/sandboxes/docker';
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { STAGED_SANDBOX_PATH } from '../stage.js';
+import { sandboxPnpmEnv } from './prereqs.js';
 import { renderPrompt } from '../render-prompt.js';
 import type { CiGateResult } from './ci-gate.js';
 
@@ -183,8 +184,14 @@ export async function runFixer(args: RunFixerArgs): Promise<FixerRunResult> {
         // HUSKY=0 / CI=true: the wrapper's CI gate is the canonical check.
         // A downstream pre-commit hook running inside the fixer's `git commit`
         // would silently burn the idle budget (see implementer `run()` call
-        // site in main.ts for the full rationale).
-        env: { GH_TOKEN: args.ghToken, HUSKY: '0', CI: 'true' },
+        // site in main.ts for the full rationale). sandboxPnpmEnv() keeps pnpm's
+        // virtual store off the Windows host bind mount (no-op elsewhere).
+        env: {
+          ...sandboxPnpmEnv(),
+          GH_TOKEN: args.ghToken,
+          HUSKY: '0',
+          CI: 'true',
+        },
       }),
       prompt,
       branchStrategy: { type: 'branch', branch: args.branch },
