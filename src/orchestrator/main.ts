@@ -13,12 +13,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   HOST_CREDS_PATH,
-  hostPnpmStoreMount,
   IMAGE_NAME,
   REPO_ROOT,
   SANDBOX_CREDS_PATH,
   sandboxPnpmEnv,
-  type HostPnpmStoreMount,
 } from './prereqs.js';
 import { STAGED_DIR_RELATIVE, STAGED_SANDBOX_PATH } from '../stage.js';
 import { renderPrompt } from '../render-prompt.js';
@@ -133,11 +131,19 @@ const MAX_FIX_ATTEMPTS = 2;
 // via sandcastle's `hooks.sandbox.onSandboxReady`. Hoisting install here keeps
 // its cost off the agent's idle/wall-clock budget, and running it inside the
 // container guarantees Linux-native binaries (esbuild, sharp, …) regardless of
-// host OS. 20 min covers a cold install on a sizeable monorepo with room to
-// spare; a hook timeout aborts the run before the agent ever boots. Override
-// with `--pre-install-timeout` / SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS
-// for an unusually large repo.
-const DEFAULT_PRE_AGENT_INSTALL_TIMEOUT_MS = 20 * 60 * 1000;
+// host OS.
+//
+// 45 min is sized for the worst case we've measured: on a Windows host the
+// worktree is bind-mounted through Docker Desktop's virtiofs/9p layer, and
+// writing a large monorepo's node_modules tree across that layer is slow —
+// a ~1500-package install clocks ~30 min regardless of whether packages come
+// from the network or a warm store (the cost is the filesystem, not the
+// fetch). A native Linux/Mac host installs the same tree in a fraction of
+// that, so the default is generous for them and realistic for Windows. Raise
+// it with `--pre-install-timeout` / SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS
+// for an even larger repo; the real fix for Windows *speed* is running the repo
+// from the WSL2 filesystem (see README).
+const DEFAULT_PRE_AGENT_INSTALL_TIMEOUT_MS = 45 * 60 * 1000;
 
 // Floor for the configurable pre-agent install timeout. Mirrors cli.ts's
 // MIN_IDLE_TIMEOUT_SECONDS rationale: too low and every cold install is
@@ -156,12 +162,14 @@ export function buildPreAgentInstallHook(
   // or slow install is undiagnosable. The log survives even on the Windows
   // teardown-failure path, where the worktree dir is left in place.
   //
-  // `set -o pipefail` is load-bearing: without it the pipeline's exit status is
-  // tee's (always 0), so a failed install would report success and let a broken
-  // dependency tree through to the agent. dash (the container's /bin/sh) honors
-  // it.
+  // The hook runs under the container's /bin/sh, which is dash — it has no
+  // `pipefail`, so piping the install into `tee` would mask a failed install
+  // behind tee's exit 0 and boot the agent on a broken dependency tree.
+  // Instead, redirect to the log file, capture the install's real exit code,
+  // echo the log to the hook's own stdout, and exit with that code — pure
+  // POSIX sh, exit status preserved.
   const log = `.sandcastle/logs/pre-agent-install-${opts.issueNumber}.log`;
-  const command = `set -o pipefail; mkdir -p .sandcastle/logs && ${install} 2>&1 | tee ${log}`;
+  const command = `mkdir -p .sandcastle/logs; ${install} > ${log} 2>&1; code=$?; cat ${log}; exit $code`;
   return {
     sandbox: {
       onSandboxReady: [{ command, timeoutMs: opts.timeoutMs }],
@@ -1021,7 +1029,6 @@ async function processIssue(
   failedThisRun: ReadonlySet<number>,
   idleTimeoutSeconds: number,
   preInstallTimeoutMs: number,
-  hostStore: HostPnpmStoreMount,
 ): Promise<RunSummary> {
   const branch = `agent/issue-${issue.number}`;
   console.log(`\n[wrapper] === Issue #${issue.number}: ${issue.title} ===`);
@@ -1144,11 +1151,6 @@ async function processIssue(
               sandboxPath: STAGED_SANDBOX_PATH,
               readonly: true,
             },
-            // Read-only host pnpm store (Windows + pnpm only; empty otherwise)
-            // so the pre-agent install resolves packages locally instead of
-            // refetching the whole monorepo over the network — see
-            // hostPnpmStoreMount in prereqs.ts.
-            ...hostStore.mounts,
           ],
           // GH_TOKEN gives the in-sandbox `gh` (used by the prompt's
           // `!gh issue view ...` block, and by any agent-side `gh issue comment`)
@@ -1167,15 +1169,7 @@ async function processIssue(
           // sandboxPnpmEnv() relocates pnpm's virtual store off the Windows
           // host bind mount so the pre-agent install doesn't EACCES-abort (no-op
           // on non-Windows hosts) — see its definition in prereqs.ts.
-          // hostStore.env points pnpm's store-dir at the read-only host-store
-          // mount above (Windows + pnpm only; empty otherwise).
-          env: {
-            ...sandboxPnpmEnv(),
-            ...hostStore.env,
-            GH_TOKEN: ghToken,
-            HUSKY: '0',
-            CI: 'true',
-          },
+          env: { ...sandboxPnpmEnv(), GH_TOKEN: ghToken, HUSKY: '0', CI: 'true' },
         }),
         prompt,
         branchStrategy: { type: 'branch', branch },
@@ -1484,7 +1478,6 @@ async function drainQueue(
   ghToken: string,
   idleTimeoutSeconds: number,
   preInstallTimeoutMs: number,
-  hostStore: HostPnpmStoreMount,
 ): Promise<RunSummary[]> {
   const summaries: RunSummary[] = [];
   const siblings: SiblingSummary[] = [];
@@ -1511,7 +1504,6 @@ async function drainQueue(
         failedThisRun,
         idleTimeoutSeconds,
         preInstallTimeoutMs,
-        hostStore,
       );
       summaries.push(summary);
 
@@ -1652,16 +1644,6 @@ export async function runDrain(args: {
   // timeout.
   const preInstallTimeoutMs = resolvePreInstallTimeoutMs(args.preInstallTimeoutSeconds);
 
-  // Resolve the read-only host pnpm store mount once — host state is identical
-  // across every issue/sub-agent in this drain. No-op (empty) off Windows or
-  // when the store path can't be discovered.
-  const hostStore = await hostPnpmStoreMount(detectPackageManager(REPO_ROOT));
-  if (hostStore.mounts.length > 0) {
-    console.log(
-      `[wrapper] warming sandbox pnpm store from host store ${hostStore.mounts[0].hostPath} (read-only)`,
-    );
-  }
-
   const queue = await fetchQueue();
   if (queue.length === 0) {
     console.log('[wrapper] Queue empty');
@@ -1671,13 +1653,7 @@ export async function runDrain(args: {
     `[wrapper] Queue: ${queue.length} issue(s) — ${queue.map((i) => `#${i.number}`).join(', ')}`,
   );
 
-  const summaries = await drainQueue(
-    queue,
-    args.token,
-    idleTimeoutSeconds,
-    preInstallTimeoutMs,
-    hostStore,
-  );
+  const summaries = await drainQueue(queue, args.token, idleTimeoutSeconds, preInstallTimeoutMs);
   printSummary(summaries);
 }
 

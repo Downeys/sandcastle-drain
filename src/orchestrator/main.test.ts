@@ -14,7 +14,7 @@ describe('buildPreAgentInstallHook', () => {
     expect(hooks.sandbox?.onSandboxReady).toHaveLength(1);
   });
 
-  it('wraps each package manager\'s frozen-install in a logged, pipefail-guarded command', () => {
+  it('logs each package manager\'s frozen-install and preserves the install exit code (no pipefail/tee — container sh is dash)', () => {
     const cmd = (pm: 'npm' | 'pnpm' | 'yarn') =>
       buildPreAgentInstallHook(pm, opts).sandbox?.onSandboxReady?.[0]?.command ?? '';
 
@@ -24,10 +24,13 @@ describe('buildPreAgentInstallHook', () => {
       ['yarn', 'yarn install --frozen-lockfile'],
     ] as const) {
       const command = cmd(pm);
-      expect(command).toContain(install);
-      // pipefail makes the pipeline surface the install's exit code, not tee's.
-      expect(command).toContain('set -o pipefail');
-      expect(command).toContain('tee .sandcastle/logs/pre-agent-install-7.log');
+      // Redirect to the per-issue log, then exit with the install's real code —
+      // dash has no pipefail, so a `| tee` would mask a failed install as 0.
+      expect(command).toContain(`${install} > .sandcastle/logs/pre-agent-install-7.log 2>&1`);
+      expect(command).toContain('code=$?');
+      expect(command).toContain('exit $code');
+      expect(command).not.toContain('pipefail');
+      expect(command).not.toContain('tee ');
     }
   });
 
@@ -58,12 +61,12 @@ describe('resolvePreInstallTimeoutMs', () => {
   });
 
   it('falls back to the built-in default when neither is set', () => {
-    // Default is 20 minutes.
-    expect(resolvePreInstallTimeoutMs(undefined, {})).toBe(20 * 60 * 1000);
+    // Default is 45 minutes — sized for a slow Windows/virtiofs install.
+    expect(resolvePreInstallTimeoutMs(undefined, {})).toBe(45 * 60 * 1000);
   });
 
   it('ignores a non-integer or below-minimum env var and uses the default', () => {
-    const dflt = 20 * 60 * 1000;
+    const dflt = 45 * 60 * 1000;
     expect(resolvePreInstallTimeoutMs(undefined, { SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS: 'abc' })).toBe(
       dflt,
     );

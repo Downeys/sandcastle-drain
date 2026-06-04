@@ -84,7 +84,7 @@ One, narrowly scoped. The wrapper is otherwise opinionated:
 - Label set is fixed (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`).
 - Paths are fixed (`<host-cwd>/.sandcastle-drain/staged/`, `<host-cwd>/.sandcastle-drain/worktrees/`, `<host-cwd>/.sandcastle-drain/logs/`).
 - Implementer idle timeout: 10 minutes per run, **overridable via `--idle-timeout <seconds>`**. Wall-clock cap: 90 minutes per run. One auto-retry on idle / wall-clock timeout.
-- Pre-agent dependency install timeout: 20 minutes, **overridable via `--pre-install-timeout <seconds>`** (or the `SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS` env var, for projects that invoke `drain` through a fixed `npx` script; the flag wins when both are set).
+- Pre-agent dependency install timeout: 45 minutes, **overridable via `--pre-install-timeout <seconds>`** (or the `SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS` env var, for projects that invoke `drain` through a fixed `npx` script; the flag wins when both are set). The default is generous because a large monorepo's install is slow on a Windows host — see [Windows install performance](#windows-install-performance).
 - Reviewer / fixer budget: 5 minute idle, 30 minute wall-clock. Not user-tunable.
 
 The `--idle-timeout` flag exists for one reason: a fresh-worktree cold start (especially a full `pnpm install` on a now-large monorepo) can legitimately exceed 10 minutes. If your runs are dying with `AgentIdleTimeoutError` during setup before the agent produces any output, raising the flag is the right fix. Don't raise it to mask a hanging hook — see the next section.
@@ -98,14 +98,21 @@ The implementer, fixer, and reviewer agents all run inside the sandcastle Docker
 - `HUSKY=0` — **disables every git hook inside the sandbox.** Husky's recommended bypass, no `--no-verify` argument needed at the commit call site. The rationale: the wrapper's CI gate (`pnpm run typecheck && pnpm run lint && pnpm run test` in a clean worktree) is the canonical check. A downstream `pre-commit` hook running the same checks is redundant AND catastrophic — it produces no stdout the idle watcher can see, so a slow hook silently burns the idle budget and kills the run with no diagnostic. The wrapper's CI gate + fixer loop covers the same surface and reports failures explicitly.
 - `CI=true` — parallel signal a lot of tools respect for "unattended run, skip interactive prompts."
 
-On **Windows hosts running pnpm**, two more env vars are set for the install (no-op on Linux/Mac, where the worktree bind mount is native and none of this is needed):
+On **Windows hosts running pnpm**, one more env var is set for the install (no-op on Linux/Mac, where the worktree bind mount is native and it isn't needed):
 
 - `npm_config_virtual_store_dir=/home/agent/.pnpm-vstore` — relocates pnpm's virtual store off the bind mount. Docker Desktop's virtiofs/9p layer rejects pnpm's rename-into-place with `EACCES`; moving the store onto the container's own filesystem keeps every rename off the mount.
-- `npm_config_store_dir` → a **read-only** bind mount of your host pnpm store (discovered via `pnpm store path`). With the virtual store relocated, the container's store starts empty, so without this the install would refetch your entire dependency tree from the registry — enough to blow the timeout on a large monorepo. The read-only host-store mount lets the install resolve every package locally instead. It's read-only on purpose (the container never mutates your real store), which means the agent can't `pnpm add` a brand-new package that isn't already in your host store during a run on Windows; install what you need on the host first.
 
 If your project has a `pre-commit` hook that does something the wrapper's CI gate genuinely doesn't replicate (e.g. secret scanning), move it to a `pre-push` hook the wrapper never invokes, or run it as a separate `package.json` script that the CI gate could pick up.
 
 If you need to fork off these defaults for other reasons, fork the wrapper or open an issue. Future versions may expose a `sandcastle.config.ts` if users need it; today there is no escape hatch beyond editing source.
+
+## Windows install performance
+
+On a Windows host the agent worktree is bind-mounted into the Linux container through Docker Desktop's virtiofs/9p layer, and **writing a large monorepo's `node_modules` tree across that layer is slow** — measured at ~30 minutes for a ~1500-package pnpm workspace. That cost is the filesystem, not the network: warming the package store makes no meaningful difference, because the time goes into creating the symlink farm and per-workspace `node_modules` over the mount, not fetching from the registry. The 45-minute default install timeout exists to absorb this; raise it with `--pre-install-timeout` for an even larger repo.
+
+The install runs *before* the agent boots (off the idle/wall-clock budget) as a sandbox hook. If it times out you'll see `HookTimeoutError: Hook 'pnpm install --frozen-lockfile' timed out`. Its full stdout+stderr is captured to `<worktree>/.sandcastle/logs/pre-agent-install-<issue>.log` — read that to see where it stalled.
+
+**If you want fast installs on Windows, run the repo from the WSL2 filesystem** (a native ext4 mount, no virtiofs) rather than from `C:\…`. This is not required — the wrapper works from a native-Windows checkout — but it's the only thing that makes the install fast.
 
 ## Versioning discipline
 
