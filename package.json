@@ -1,6 +1,6 @@
 {
   "name": "sandcastle-drain",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Queue wrapper around @ai-hero/sandcastle: drains GitHub issues labelled `sandcastle` by running an autonomous Claude Code agent inside a Docker sandbox.",
   "license": "MIT",
   "author": "Downeys",
