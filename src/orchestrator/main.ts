@@ -13,10 +13,12 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   HOST_CREDS_PATH,
+  hostPnpmStoreMount,
   IMAGE_NAME,
   REPO_ROOT,
   SANDBOX_CREDS_PATH,
   sandboxPnpmEnv,
+  type HostPnpmStoreMount,
 } from './prereqs.js';
 import { STAGED_DIR_RELATIVE, STAGED_SANDBOX_PATH } from '../stage.js';
 import { renderPrompt } from '../render-prompt.js';
@@ -131,19 +133,38 @@ const MAX_FIX_ATTEMPTS = 2;
 // via sandcastle's `hooks.sandbox.onSandboxReady`. Hoisting install here keeps
 // its cost off the agent's idle/wall-clock budget, and running it inside the
 // container guarantees Linux-native binaries (esbuild, sharp, …) regardless of
-// host OS. 15 min covers a cold pnpm install on a sizeable monorepo with room
-// to spare; a hook timeout aborts the run before the agent ever boots.
-const PRE_AGENT_INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
+// host OS. 20 min covers a cold install on a sizeable monorepo with room to
+// spare; a hook timeout aborts the run before the agent ever boots. Override
+// with `--pre-install-timeout` / SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS
+// for an unusually large repo.
+const DEFAULT_PRE_AGENT_INSTALL_TIMEOUT_MS = 20 * 60 * 1000;
 
-export function buildPreAgentInstallHook(pm: PackageManager): SandboxHooks {
+// Floor for the configurable pre-agent install timeout. Mirrors cli.ts's
+// MIN_IDLE_TIMEOUT_SECONDS rationale: too low and every cold install is
+// guaranteed to time out. Shared with cli.ts (flag validation) and runDrain
+// (env-var validation); lives here because cli.ts already imports from main.
+export const MIN_PRE_INSTALL_TIMEOUT_SECONDS = 60;
+
+export function buildPreAgentInstallHook(
+  pm: PackageManager,
+  opts: { timeoutMs: number; issueNumber: number },
+): SandboxHooks {
+  const install = `${pm} ${installArgs(pm).join(' ')}`;
+  // Capture the install's stdout+stderr to a host-visible file under the
+  // worktree's `.sandcastle/logs/`. Today the wrapper only ever sees the
+  // hook's "exit 1" / "timed out" — pnpm's actual output is lost — so a failed
+  // or slow install is undiagnosable. The log survives even on the Windows
+  // teardown-failure path, where the worktree dir is left in place.
+  //
+  // `set -o pipefail` is load-bearing: without it the pipeline's exit status is
+  // tee's (always 0), so a failed install would report success and let a broken
+  // dependency tree through to the agent. dash (the container's /bin/sh) honors
+  // it.
+  const log = `.sandcastle/logs/pre-agent-install-${opts.issueNumber}.log`;
+  const command = `set -o pipefail; mkdir -p .sandcastle/logs && ${install} 2>&1 | tee ${log}`;
   return {
     sandbox: {
-      onSandboxReady: [
-        {
-          command: `${pm} ${installArgs(pm).join(' ')}`,
-          timeoutMs: PRE_AGENT_INSTALL_TIMEOUT_MS,
-        },
-      ],
+      onSandboxReady: [{ command, timeoutMs: opts.timeoutMs }],
     },
   };
 }
@@ -999,6 +1020,8 @@ async function processIssue(
   siblings: readonly SiblingSummary[],
   failedThisRun: ReadonlySet<number>,
   idleTimeoutSeconds: number,
+  preInstallTimeoutMs: number,
+  hostStore: HostPnpmStoreMount,
 ): Promise<RunSummary> {
   const branch = `agent/issue-${issue.number}`;
   console.log(`\n[wrapper] === Issue #${issue.number}: ${issue.title} ===`);
@@ -1121,6 +1144,11 @@ async function processIssue(
               sandboxPath: STAGED_SANDBOX_PATH,
               readonly: true,
             },
+            // Read-only host pnpm store (Windows + pnpm only; empty otherwise)
+            // so the pre-agent install resolves packages locally instead of
+            // refetching the whole monorepo over the network — see
+            // hostPnpmStoreMount in prereqs.ts.
+            ...hostStore.mounts,
           ],
           // GH_TOKEN gives the in-sandbox `gh` (used by the prompt's
           // `!gh issue view ...` block, and by any agent-side `gh issue comment`)
@@ -1139,11 +1167,22 @@ async function processIssue(
           // sandboxPnpmEnv() relocates pnpm's virtual store off the Windows
           // host bind mount so the pre-agent install doesn't EACCES-abort (no-op
           // on non-Windows hosts) — see its definition in prereqs.ts.
-          env: { ...sandboxPnpmEnv(), GH_TOKEN: ghToken, HUSKY: '0', CI: 'true' },
+          // hostStore.env points pnpm's store-dir at the read-only host-store
+          // mount above (Windows + pnpm only; empty otherwise).
+          env: {
+            ...sandboxPnpmEnv(),
+            ...hostStore.env,
+            GH_TOKEN: ghToken,
+            HUSKY: '0',
+            CI: 'true',
+          },
         }),
         prompt,
         branchStrategy: { type: 'branch', branch },
-        hooks: buildPreAgentInstallHook(detectPackageManager(REPO_ROOT)),
+        hooks: buildPreAgentInstallHook(detectPackageManager(REPO_ROOT), {
+          timeoutMs: preInstallTimeoutMs,
+          issueNumber: issue.number,
+        }),
         idleTimeoutSeconds,
         signal: AbortSignal.timeout(WALL_CLOCK_TIMEOUT_MS),
       });
@@ -1444,6 +1483,8 @@ async function drainQueue(
   initial: Issue[],
   ghToken: string,
   idleTimeoutSeconds: number,
+  preInstallTimeoutMs: number,
+  hostStore: HostPnpmStoreMount,
 ): Promise<RunSummary[]> {
   const summaries: RunSummary[] = [];
   const siblings: SiblingSummary[] = [];
@@ -1469,6 +1510,8 @@ async function drainQueue(
         siblings,
         failedThisRun,
         idleTimeoutSeconds,
+        preInstallTimeoutMs,
+        hostStore,
       );
       summaries.push(summary);
 
@@ -1589,12 +1632,34 @@ export async function runDrain(args: {
   // `--idle-timeout <seconds>` flag. Affects the implementer agent only —
   // fixer/reviewer keep their tighter, fixed budgets.
   idleTimeoutSeconds?: number;
+  // Override for DEFAULT_PRE_AGENT_INSTALL_TIMEOUT_MS, in seconds. Threaded from
+  // the CLI's `--pre-install-timeout <seconds>` flag. An env fallback
+  // (SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS) covers downstream projects
+  // that invoke `drain` through a fixed `npx` script and can't pass flags;
+  // the flag wins over the env var when both are set.
+  preInstallTimeoutSeconds?: number;
 }): Promise<void> {
   console.log('[wrapper] sandcastle-drain starting');
 
   const idleTimeoutSeconds = args.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS;
   if (args.idleTimeoutSeconds !== undefined) {
     console.log(`[wrapper] implementer idle-timeout overridden to ${idleTimeoutSeconds}s`);
+  }
+
+  // Precedence: CLI flag > env var > default. The env value is validated here
+  // (the flag is already validated in cli.ts); a non-positive or unparseable
+  // env var is ignored with a warning rather than silently disabling the
+  // timeout.
+  const preInstallTimeoutMs = resolvePreInstallTimeoutMs(args.preInstallTimeoutSeconds);
+
+  // Resolve the read-only host pnpm store mount once — host state is identical
+  // across every issue/sub-agent in this drain. No-op (empty) off Windows or
+  // when the store path can't be discovered.
+  const hostStore = await hostPnpmStoreMount(detectPackageManager(REPO_ROOT));
+  if (hostStore.mounts.length > 0) {
+    console.log(
+      `[wrapper] warming sandbox pnpm store from host store ${hostStore.mounts[0].hostPath} (read-only)`,
+    );
   }
 
   const queue = await fetchQueue();
@@ -1606,6 +1671,35 @@ export async function runDrain(args: {
     `[wrapper] Queue: ${queue.length} issue(s) — ${queue.map((i) => `#${i.number}`).join(', ')}`,
   );
 
-  const summaries = await drainQueue(queue, args.token, idleTimeoutSeconds);
+  const summaries = await drainQueue(
+    queue,
+    args.token,
+    idleTimeoutSeconds,
+    preInstallTimeoutMs,
+    hostStore,
+  );
   printSummary(summaries);
+}
+
+// Resolves the pre-agent install timeout in ms from (in precedence order) the
+// CLI flag value, the SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS env var, and
+// the built-in default. Exported for unit testing the env/precedence logic.
+export function resolvePreInstallTimeoutMs(
+  cliSeconds: number | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  if (cliSeconds !== undefined) return cliSeconds * 1000;
+
+  const raw = env.SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS;
+  if (raw !== undefined && raw.trim() !== '') {
+    const seconds = Number(raw);
+    if (Number.isInteger(seconds) && seconds >= MIN_PRE_INSTALL_TIMEOUT_SECONDS) {
+      console.log(`[wrapper] pre-install timeout overridden to ${seconds}s (env)`);
+      return seconds * 1000;
+    }
+    console.warn(
+      `[wrapper] ignoring SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS=${raw} — expected an integer ≥ ${MIN_PRE_INSTALL_TIMEOUT_SECONDS}`,
+    );
+  }
+  return DEFAULT_PRE_AGENT_INSTALL_TIMEOUT_MS;
 }

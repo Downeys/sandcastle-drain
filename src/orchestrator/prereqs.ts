@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { PackageManager } from './ci-gate.js';
 
 // Host-project root: when `npx sandcastle-drain` is run, this is the user's project
 // directory (where their `.sandcastle-drain/`, `.git/`, etc. live), NOT the installed
@@ -56,6 +57,69 @@ export function sandboxPnpmEnv(
   return platform === 'win32'
     ? { npm_config_virtual_store_dir: SANDBOX_VIRTUAL_STORE_DIR }
     : {};
+}
+
+// Relocating the virtual store off the mount (sandboxPnpmEnv) stops the EACCES
+// abort, but it also discards the host's already-installed deps: the container's
+// store starts empty, so `pnpm install --frozen-lockfile` must refetch every
+// package from the registry and rebuild the symlink farm — on a large monorepo
+// that blows the install-hook timeout. Bind-mounting the host's content-
+// addressable store read-only and pointing pnpm's `store-dir` at it lets the
+// in-container install resolve every package locally instead of over the
+// network. The host store sits on the virtiofs mount while the virtual store is
+// on the container's ext4, so pnpm *copies* (can't hardlink across filesystems)
+// — still a local disk copy with no registry round-trips. Read-only is
+// deliberate: the container never writes the user's real store (so no virtiofs
+// rename EACCES, no corruption risk), which is sufficient for a frozen install
+// against an already-populated store. A package missing from the host store
+// would fail rather than silently refetch — acceptable, and far rarer than the
+// timeout this prevents.
+export const SANDBOX_HOST_STORE_PATH = '/home/agent/.pnpm-store-host';
+
+export interface HostPnpmStoreMount {
+  // 0 or 1 mounts — empty means "no warm store available, fall back to a cold
+  // install". Shaped structurally (not sandcastle's MountConfig) so prereqs
+  // stays free of a sandbox-provider import; the docker() call sites already
+  // build mounts of this shape inline.
+  mounts: { hostPath: string; sandboxPath: string; readonly?: boolean }[];
+  env: Record<string, string>;
+}
+
+// Resolves the host pnpm store path the way pnpm itself would for this project
+// (respecting any .npmrc store-dir), via `pnpm store path`. Returns null on any
+// failure — no pnpm on PATH, non-zero exit, empty output, or a path that does
+// not exist — so the caller degrades to a cold install instead of mounting a
+// bogus path.
+async function defaultResolvePnpmStorePath(): Promise<string | null> {
+  const result = await execa('pnpm', ['store', 'path'], {
+    cwd: REPO_ROOT,
+    reject: false,
+  });
+  if (result.exitCode !== 0) return null;
+  const storePath = result.stdout.trim();
+  if (!storePath || !existsSync(storePath)) return null;
+  return storePath;
+}
+
+// Builds the read-only host-store mount + `store-dir` env for the pre-agent
+// install. Active only on Windows + pnpm (the only host/PM combo that hits the
+// off-mount-vstore cold-install penalty); a no-op — and so byte-identical to
+// prior behavior — everywhere else and whenever the store path can't be
+// resolved. `platform` and `resolveStorePath` are injectable for tests.
+export async function hostPnpmStoreMount(
+  pm: PackageManager,
+  platform: NodeJS.Platform = process.platform,
+  resolveStorePath: () => Promise<string | null> = defaultResolvePnpmStorePath,
+): Promise<HostPnpmStoreMount> {
+  if (platform !== 'win32' || pm !== 'pnpm') return { mounts: [], env: {} };
+  const storePath = await resolveStorePath();
+  if (!storePath) return { mounts: [], env: {} };
+  return {
+    mounts: [
+      { hostPath: storePath, sandboxPath: SANDBOX_HOST_STORE_PATH, readonly: true },
+    ],
+    env: { npm_config_store_dir: SANDBOX_HOST_STORE_PATH },
+  };
 }
 
 // Path to the Dockerfile bundled inside this package. Same relative path

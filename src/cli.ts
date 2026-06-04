@@ -15,7 +15,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { runDrain } from './orchestrator/main.js';
+import { MIN_PRE_INSTALL_TIMEOUT_SECONDS, runDrain } from './orchestrator/main.js';
 import { runAllPrereqs } from './orchestrator/prereqs.js';
 import { ShipError, shipBranch } from './orchestrator/ship.js';
 import { SweepError, sweepBranch } from './orchestrator/sweep.js';
@@ -34,6 +34,13 @@ Options:
                               (default 600). Raise this for projects whose first
                               tool calls in a fresh worktree legitimately exceed
                               10 minutes (e.g. huge install or codegen step).
+  --pre-install-timeout <seconds>
+                              (drain only) Override the pre-agent dependency
+                              install timeout (default 1200). Raise this for a
+                              very large monorepo whose cold install legitimately
+                              runs past 20 minutes. Also settable via the
+                              SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS env var
+                              (the flag wins when both are set).
 
 All paths resolve relative to the current working directory.`;
 
@@ -62,32 +69,60 @@ function parseIssueArg(subcommand: string, arg: string | undefined): number {
 // (cold pnpm install on a now-large monorepo, heavy codegen).
 const MIN_IDLE_TIMEOUT_SECONDS = 60;
 
-// Parses `drain`-subcommand flags. Currently the only flag is `--idle-timeout
-// <seconds>` (also accepts `--idle-timeout=<seconds>`). Unknown flags fail
-// fast so a typo doesn't silently get ignored mid-run.
-export function parseDrainFlags(args: readonly string[]): { idleTimeoutSeconds?: number } {
-  const out: { idleTimeoutSeconds?: number } = {};
+export interface DrainFlags {
+  idleTimeoutSeconds?: number;
+  preInstallTimeoutSeconds?: number;
+}
+
+// Matches `arg` against the known flag names in both `--flag value` and
+// `--flag=value` forms. Returns the canonical flag name plus the inline value
+// when the `=` form was used (undefined means "value is the next arg").
+function matchFlag(
+  arg: string,
+  names: readonly string[],
+): { name: string; inlineValue: string | undefined } | null {
+  for (const name of names) {
+    if (arg === name) return { name, inlineValue: undefined };
+    if (arg.startsWith(`${name}=`)) return { name, inlineValue: arg.slice(name.length + 1) };
+  }
+  return null;
+}
+
+// Parses `drain`-subcommand flags: `--idle-timeout <seconds>` and
+// `--pre-install-timeout <seconds>` (both also accept the `--flag=<seconds>`
+// form). Unknown flags fail fast so a typo doesn't silently get ignored mid-run.
+export function parseDrainFlags(args: readonly string[]): DrainFlags {
+  const out: DrainFlags = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    let value: string | undefined;
-    if (arg === '--idle-timeout') {
-      value = args[i + 1];
-      i += 1;
-    } else if (arg.startsWith('--idle-timeout=')) {
-      value = arg.slice('--idle-timeout='.length);
-    } else {
+    const match = matchFlag(arg, ['--idle-timeout', '--pre-install-timeout']);
+    if (!match) {
       fail(`Unknown drain flag: ${arg}`, { showHelp: true });
     }
+    let value = match.inlineValue;
+    if (value === undefined) {
+      value = args[i + 1];
+      i += 1;
+    }
     if (!value || !/^\d+$/.test(value)) {
-      fail(`--idle-timeout expects a positive integer (got: ${value ?? '<missing>'})`);
+      fail(`${match.name} expects a positive integer (got: ${value ?? '<missing>'})`);
     }
     const seconds = Number(value);
-    if (seconds < MIN_IDLE_TIMEOUT_SECONDS) {
-      fail(
-        `--idle-timeout must be at least ${MIN_IDLE_TIMEOUT_SECONDS}s (got: ${seconds}). Setting it below the cold-start budget guarantees timeouts.`,
-      );
+    if (match.name === '--idle-timeout') {
+      if (seconds < MIN_IDLE_TIMEOUT_SECONDS) {
+        fail(
+          `--idle-timeout must be at least ${MIN_IDLE_TIMEOUT_SECONDS}s (got: ${seconds}). Setting it below the cold-start budget guarantees timeouts.`,
+        );
+      }
+      out.idleTimeoutSeconds = seconds;
+    } else {
+      if (seconds < MIN_PRE_INSTALL_TIMEOUT_SECONDS) {
+        fail(
+          `--pre-install-timeout must be at least ${MIN_PRE_INSTALL_TIMEOUT_SECONDS}s (got: ${seconds}). Setting it below the cold-install budget guarantees timeouts.`,
+        );
+      }
+      out.preInstallTimeoutSeconds = seconds;
     }
-    out.idleTimeoutSeconds = seconds;
   }
   return out;
 }
@@ -119,7 +154,7 @@ async function main(): Promise<void> {
   // Validate args before running prereqs so usage errors don't depend on
   // `gh` being authed — a missing issue number should fail fast with help text.
   let issue: number | undefined;
-  let drainFlags: { idleTimeoutSeconds?: number } = {};
+  let drainFlags: DrainFlags = {};
   switch (subcommand) {
     case 'drain':
       drainFlags = parseDrainFlags(rest);
@@ -153,7 +188,11 @@ async function main(): Promise<void> {
       // rendered in memory by `src/render-prompt.ts` and never materialize on
       // the host filesystem.
       await stage(process.cwd());
-      await runDrain({ token, idleTimeoutSeconds: drainFlags.idleTimeoutSeconds });
+      await runDrain({
+        token,
+        idleTimeoutSeconds: drainFlags.idleTimeoutSeconds,
+        preInstallTimeoutSeconds: drainFlags.preInstallTimeoutSeconds,
+      });
       return;
     case 'ship':
       try {
