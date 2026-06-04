@@ -36,9 +36,10 @@ Options:
                               10 minutes (e.g. huge install or codegen step).
   --pre-install-timeout <seconds>
                               (drain only) Override the pre-agent dependency
-                              install timeout (default 1200). Raise this for a
-                              very large monorepo whose cold install legitimately
-                              runs past 20 minutes. Also settable via the
+                              install timeout (default 2700 = 45 min). On a
+                              Windows host a large monorepo's install is slow
+                              (~30 min over the virtiofs bind mount); raise this
+                              for an even larger repo. Also settable via the
                               SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS env var
                               (the flag wins when both are set).
 
