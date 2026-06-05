@@ -17,3 +17,4 @@ Short. One page. The minimum: **Context** (the problem), **Decision** (what we c
 ## Index
 
 - [0001 — Compiled library + staged content](0001-compiled-library-and-staged-content.md)
+- [0002 — Shift fast checks left into the implementer](0002-shift-fast-checks-left.md)

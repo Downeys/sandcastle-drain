@@ -34,13 +34,19 @@ Read the issue carefully and decide what kind of work it requires:
 
 If the issue is genuinely too big for a single run, commit what does fit and write the rest into `.sandcastle-drain/splits.json` — see **Splitting a too-big issue** below. Don't half-solve it.
 
-## Tests you run vs. tests the wrapper runs
+## Checks you run before handoff vs. checks the wrapper runs
 
-Targeted only. When you add or change a test, run **just that test file** (e.g. `npx vitest run path/to/added.test.ts`) to confirm it does what you intended. That's it.
+Before you emit `<promise>COMPLETE</promise>`, run the **fast** checks yourself so cheap, self-inflicted breakage is caught here instead of bouncing through a second agent (the fixer):
 
-**Do not run the full project test suite.** No `npm test`, no `pnpm test`, no bare `vitest`, no `npm run test`. The wrapper runs `typecheck` + `lint` + the full `test` suite in a clean worktree after you emit `<promise>COMPLETE</promise>` — that's the canonical broad-impact check. Running it again here is redundant, eats the idle budget, and is the most common reason a run times out before it can land.
+1. **Typecheck** — run your project's `typecheck` script (e.g. `npm run typecheck`, `pnpm typecheck`). This is the same script the wrapper's CI gate runs, so what you see here is what the gate will see.
+2. **Lint** — run your project's `lint` script the same way.
+3. **Related unit tests** — run the tests connected to the files you changed: `npx vitest related --run <changed files>` (or your test runner's equivalent related-tests mode). When you add or change a test, also run that file directly (`npx vitest run path/to/added.test.ts`) to confirm it does what you intended.
 
-If your scoped test passes and you'd otherwise reach for the full suite "just to be sure," stop and commit instead. The CI gate is the safety net. (This is the autonomous-only tightening of [.sandcastle-drain/staged/principles/claude-code-modes.md](.sandcastle-drain/staged/principles/claude-code-modes.md) "Running tests before commit".)
+**Fix failures your change caused that are quick to fix** — the type error you introduced, the lint rule you tripped, the sibling test your refactor broke. That is the entire point of running these here: a one-line type or lint error should never cost a whole fixer round-trip.
+
+**Do not spin on a hard failure.** If a failure needs substantial or design-level work, is pre-existing (not caused by your change), or surfaces when you're near the token / idle budget, do **not** chase it — emit `<promise>COMPLETE</promise>` with a one-line note and let the wrapper's CI gate and fixer handle it. Trapping yourself trying to get a stubborn check green is how a run times out before it can land, which is worse than handing off red work the fixer can pick up. (This is the same bounded-scope rule the fixer follows: surgical fixes only, bail on anything design-level.)
+
+**Do not run the full project test suite.** No `npm test`, no `pnpm test`, no bare `vitest`, no `npm run test`. The full suite is the wrapper's job: after you emit `<promise>COMPLETE</promise>` it runs `typecheck` + `lint` + the **full** `test` suite in a clean worktree — the canonical broad-impact check. The full suite is slow, runs with long silent stretches, and is the most common reason a run times out before it can land; that is exactly why it stays on the wrapper's side of the line while the scoped `related` run stays on yours. (This is the autonomous-only tightening of [.sandcastle-drain/staged/principles/claude-code-modes.md](.sandcastle-drain/staged/principles/claude-code-modes.md) "Running tests before commit".)
 
 ## Commit messages
 
