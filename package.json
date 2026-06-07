@@ -15,6 +15,12 @@
   "bin": {
     "sandcastle-drain": "dist/cli.js"
   },
+  "exports": {
+    "./visual-engine": {
+      "types": "./dist/visual-engine/index.d.ts",
+      "import": "./dist/visual-engine/index.js"
+    }
+  },
   "files": [
     "dist/**/*",
     "docker/Dockerfile",
