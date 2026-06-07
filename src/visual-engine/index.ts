@@ -26,3 +26,28 @@ export type {
   Verdict,
   VerdictPolicy,
 } from './types.js';
+export {
+  createPlaywrightCapture,
+  defaultPngName,
+  joinUrl,
+  parseBreakpointWidth,
+  DEFAULT_BREAKPOINTS,
+} from './capture.js';
+export type {
+  BrowserContextLike,
+  BrowserLike,
+  BrowserTypeLike,
+  CreatePlaywrightCaptureOptions,
+  PageLike,
+} from './capture.js';
+export {
+  createPreviewAdapter,
+  waitForReady,
+  ReadinessTimeoutError,
+  DEFAULT_READINESS_TIMEOUT_MS,
+  DEFAULT_READINESS_INTERVAL_MS,
+} from './preview-adapter-runner.js';
+export type {
+  CreatePreviewAdapterOptions,
+  WaitForReadyOptions,
+} from './preview-adapter-runner.js';
