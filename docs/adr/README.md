@@ -18,3 +18,6 @@ Short. One page. The minimum: **Context** (the problem), **Decision** (what we c
 
 - [0001 — Compiled library + staged content](0001-compiled-library-and-staged-content.md)
 - [0002 — Shift fast checks left into the implementer](0002-shift-fast-checks-left.md)
+- [0003 — sandcastle-drain owns the generic Visual-Iteration Engine](0003-owns-visual-iteration-engine.md)
+- [0004 — Visual-Iteration Engine as a drain pipeline step](0004-visual-engine-drain-integration.md)
+- [0005 — Visual-Iteration Engine execution architecture](0005-visual-engine-execution-architecture.md)
