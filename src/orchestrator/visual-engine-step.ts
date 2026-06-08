@@ -188,8 +188,10 @@ function severityBadge(s: Severity): string {
 
 /**
  * Renders the engine's `IterationReport` as a GitHub issue comment. The
- * verdict is advisory in this slice — auto-merge gating on the visual
- * verdict lands in the follow-up — so the comment says so explicitly.
+ * verdict gates auto-merge per ADR 0004: `pass` lets the merge proceed
+ * (alongside CI green + reviewer PASS); `fail` parks the issue at
+ * `needs-review` with the editor's polish preserved. Visual fail never
+ * drives the rejection / branch-discard flow.
  */
 export function formatVisualEngineComment(args: {
   readonly report: IterationReport;
@@ -197,9 +199,13 @@ export function formatVisualEngineComment(args: {
 }): string {
   const { report, degradedRoutes } = args;
   const verdictEmoji = report.verdict === 'pass' ? '✅' : '⚠️';
+  const verdictHint =
+    report.verdict === 'pass'
+      ? '_(merge gate: pass)_'
+      : '_(merge gate: fail — parked at `needs-review`, branch preserved)_';
   const lines: string[] = [];
   lines.push(
-    `**Visual-Iteration Engine:** ${verdictEmoji} \`${report.verdict}\` after ${report.iterations} iteration(s) _(advisory — not a merge gate)_`,
+    `**Visual-Iteration Engine:** ${verdictEmoji} \`${report.verdict}\` after ${report.iterations} iteration(s) ${verdictHint}`,
   );
   lines.push('');
   if (degradedRoutes) {
@@ -291,6 +297,40 @@ export interface RunVisualEngineStepResult {
   readonly degradedRoutes: boolean;
   /** True when the engine throw was caught at the loop boundary. */
   readonly runError?: string;
+}
+
+/**
+ * Outcome of the visual gate as observed by the auto-merge decision per
+ * ADR 0004.
+ *   - `'not-applicable'`: the engine didn't run (no `ui` label, or the project
+ *     has no rubric / preview-adapter config). Treated as N/A — does not block
+ *     auto-merge.
+ *   - `'pass'`: the engine ran end-to-end and produced a `pass` verdict.
+ *   - `'fail'`: the engine produced a `fail` verdict OR was applicable but
+ *     could not produce one (skipped or threw). Either way, auto-merge is
+ *     blocked. Visual fail **never** drives `handleRejection` — the editor's
+ *     commits stay on the branch and the issue parks at `needs-review`.
+ */
+export type VisualOutcome = 'not-applicable' | 'pass' | 'fail';
+
+/**
+ * Maps a completed visual engine step result to the gate's three-state
+ * outcome. Callers pass `undefined` when the gate said don't-run (no `ui`
+ * label / no visual config) and the engine never executed.
+ *
+ * A result without a `report` (Playwright import failure, engine throw,
+ * preview-adapter config rejected) is treated as `'fail'` — we can't verify
+ * the change visually, so we refuse to auto-merge. The drain still parks the
+ * branch at `needs-review`; rejection is never invoked for a visual fail.
+ */
+export function deriveVisualOutcome(
+  result: RunVisualEngineStepResult | undefined,
+): VisualOutcome {
+  if (result === undefined) return 'not-applicable';
+  if (result.report !== undefined) {
+    return result.report.verdict === 'pass' ? 'pass' : 'fail';
+  }
+  return 'fail';
 }
 
 /**

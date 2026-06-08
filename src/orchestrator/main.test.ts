@@ -3,7 +3,9 @@ import {
   buildPreAgentInstallHook,
   MIN_PRE_INSTALL_TIMEOUT_SECONDS,
   resolvePreInstallTimeoutMs,
+  shouldAutoMerge,
 } from './main.js';
+import type { VisualOutcome } from './visual-engine-step.js';
 
 const opts = { timeoutMs: 1000, issueNumber: 7 };
 
@@ -44,6 +46,62 @@ describe('buildPreAgentInstallHook', () => {
     const hook = buildPreAgentInstallHook('npm', { timeoutMs: 123_456, issueNumber: 1 })
       .sandbox?.onSandboxReady?.[0];
     expect(hook?.timeoutMs).toBe(123_456);
+  });
+});
+
+describe('shouldAutoMerge', () => {
+  // Covers the three terminal outcomes per issue #44:
+  //   (a) reviewer FAIL → normal rejection (visual irrelevant)
+  //   (b) reviewer PASS + visual PASS → auto-merge
+  //   (c) reviewer PASS + visual ceiling-fail → needs-review (no merge)
+  // Plus the N/A passthrough — non-`ui` / no-rubric issues merge on the
+  // unchanged CI + reviewer gate.
+
+  const base = {
+    commits: 2,
+    ciOk: true,
+    reviewerVerdict: 'PASS' as const,
+    visualOutcome: 'not-applicable' as VisualOutcome,
+  };
+
+  it('(a) reviewer FAIL blocks auto-merge regardless of visual outcome — rejection runs separately', () => {
+    for (const visualOutcome of ['not-applicable', 'pass', 'fail'] as const) {
+      expect(
+        shouldAutoMerge({ ...base, reviewerVerdict: 'FAIL', visualOutcome }),
+      ).toBe(false);
+    }
+  });
+
+  it('(b) reviewer PASS + visual PASS auto-merges (commits + CI green also required)', () => {
+    expect(shouldAutoMerge({ ...base, visualOutcome: 'pass' })).toBe(true);
+  });
+
+  it('(c) reviewer PASS + visual ceiling-fail blocks auto-merge — caller parks at needs-review', () => {
+    expect(shouldAutoMerge({ ...base, visualOutcome: 'fail' })).toBe(false);
+  });
+
+  it('non-`ui` / no-rubric issue (visual N/A) auto-merges on the unchanged CI + reviewer gate', () => {
+    expect(shouldAutoMerge({ ...base, visualOutcome: 'not-applicable' })).toBe(true);
+  });
+
+  it('blocks when commits are zero, even with every other conjunct true', () => {
+    expect(
+      shouldAutoMerge({ ...base, commits: 0, visualOutcome: 'pass' }),
+    ).toBe(false);
+  });
+
+  it('blocks when CI is red, even with reviewer PASS + visual PASS', () => {
+    expect(
+      shouldAutoMerge({ ...base, ciOk: false, visualOutcome: 'pass' }),
+    ).toBe(false);
+  });
+
+  it('blocks when reviewer verdict is missing (parse error / throw), regardless of visual', () => {
+    for (const visualOutcome of ['not-applicable', 'pass', 'fail'] as const) {
+      expect(
+        shouldAutoMerge({ ...base, reviewerVerdict: undefined, visualOutcome }),
+      ).toBe(false);
+    }
   });
 });
 

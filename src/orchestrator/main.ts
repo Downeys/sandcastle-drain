@@ -88,10 +88,12 @@ import {
   type SplitsParseResult,
 } from './splits.js';
 import {
+  deriveVisualOutcome,
   formatVisualEngineComment,
   formatVisualEngineErrorComment,
   runVisualEngineStep,
   shouldRunVisualEngine,
+  type VisualOutcome,
 } from './visual-engine-step.js';
 
 // ---------------------------------------------------------------------------
@@ -1028,6 +1030,34 @@ async function tryAutoMerge(issueNumber: number): Promise<boolean> {
   return true;
 }
 
+/**
+ * Auto-merge gate per ADR 0004. All four conjuncts must hold:
+ *
+ *   1. The implementer made at least one commit.
+ *   2. The CI gate (post-fixer) is green.
+ *   3. The Code Reviewer's verdict is `PASS`.
+ *   4. The visual outcome is either `not-applicable` (non-`ui` issue or no
+ *      visual config) or `pass` (engine ran end-to-end and verdict was pass).
+ *
+ * A visual `fail` blocks auto-merge but is **not** rejection-equivalent — the
+ * caller routes the issue to `needs-review` with the editor's commits
+ * preserved, and never invokes `handleRejection`. Reviewer FAIL is the only
+ * input that drives rejection; it does so regardless of the visual outcome.
+ */
+export function shouldAutoMerge(args: {
+  readonly commits: number;
+  readonly ciOk: boolean;
+  readonly reviewerVerdict: ReviewerVerdict | undefined;
+  readonly visualOutcome: VisualOutcome;
+}): boolean {
+  return (
+    args.commits > 0 &&
+    args.ciOk &&
+    args.reviewerVerdict === 'PASS' &&
+    (args.visualOutcome === 'not-applicable' || args.visualOutcome === 'pass')
+  );
+}
+
 async function processIssue(
   issue: Issue,
   ghToken: string,
@@ -1328,9 +1358,13 @@ async function processIssue(
   // critique → edit up to a ceiling (default 3) and may commit polish on the
   // branch.
   //
-  // In this slice the visual verdict is **advisory only** — it is posted as a
-  // status comment but auto-merge gating on it lands in the follow-up.
-  // Skipped on rate limit / no commits / CI red, mirroring the reviewer gate.
+  // The verdict is load-bearing — `pass` (or non-applicability) is the fourth
+  // conjunct of the auto-merge gate at (e.6); `fail` parks the issue at
+  // `needs-review` with the editor's polish preserved and never routes
+  // through `handleRejection`. Skipped on rate limit / no commits / CI red,
+  // mirroring the reviewer gate; an engine that was applicable but produced
+  // no verdict (skipped/throw) is treated as fail by `deriveVisualOutcome`.
+  let visualOutcome: VisualOutcome = 'not-applicable';
   if (
     commits.length > 0 &&
     ciResult?.ok === true &&
@@ -1350,6 +1384,7 @@ async function processIssue(
       sandboxCredsPath: SANDBOX_CREDS_PATH,
       stagedHostPath: join(REPO_ROOT, STAGED_DIR_RELATIVE),
     });
+    visualOutcome = deriveVisualOutcome(engineResult);
     if (engineResult.report !== undefined) {
       await postComment(
         issue.number,
@@ -1436,11 +1471,21 @@ async function processIssue(
   }
   const reviewerVerdict: ReviewerVerdict | undefined = reviewerOutput?.verdict;
 
-  // (e.6) Auto-merge gate: CI green AND reviewer PASS → push, merge, sweep.
-  // Any other combination (reviewer FAIL, parse error, throw, CI red) falls
-  // through to the manual `needs-review` / `needs-info` label paths below.
+  // (e.6) Auto-merge gate per ADR 0004: CI green + reviewer PASS + (visual
+  // N/A or visual PASS) → push, merge, sweep. Any other combination
+  // (reviewer FAIL, visual fail, parse error, throw, CI red) falls through
+  // to the rejection / `needs-review` / `needs-info` label paths below. A
+  // visual fail specifically routes to `needs-review` — never rejection —
+  // because the editor's commits are the work, not a rejected diff.
   let autoMerged = false;
-  if (commits.length > 0 && ciResult?.ok === true && reviewerVerdict === 'PASS') {
+  if (
+    shouldAutoMerge({
+      commits: commits.length,
+      ciOk: ciResult?.ok === true,
+      reviewerVerdict,
+      visualOutcome,
+    })
+  ) {
     autoMerged = await tryAutoMerge(issue.number);
   }
 
