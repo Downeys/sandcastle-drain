@@ -132,15 +132,16 @@ export function translateCapturePath(
   screenshotsHostDir: string,
   sandboxMountPath: string = SLOP_CHECK_CAPTURES_SANDBOX_PATH,
 ): string {
-  const host = screenshotsHostDir.endsWith('/')
-    ? screenshotsHostDir.slice(0, -1)
-    : screenshotsHostDir;
-  const sandbox = sandboxMountPath.endsWith('/')
-    ? sandboxMountPath.slice(0, -1)
-    : sandboxMountPath;
+  const trimTrailingSep = (s: string): string =>
+    s.endsWith('/') || s.endsWith('\\') ? s.slice(0, -1) : s;
+  const host = trimTrailingSep(screenshotsHostDir);
+  const sandbox = trimTrailingSep(sandboxMountPath);
   if (pngHostPath === host) return sandbox;
-  if (pngHostPath.startsWith(`${host}/`)) {
-    return `${sandbox}/${pngHostPath.slice(host.length + 1)}`;
+  // Accept either separator after the host prefix — on Windows the host path
+  // uses `\` while the sandbox path is POSIX `/`.
+  if (pngHostPath.startsWith(`${host}/`) || pngHostPath.startsWith(`${host}\\`)) {
+    const rel = pngHostPath.slice(host.length + 1).replace(/\\/g, '/');
+    return `${sandbox}/${rel}`;
   }
   return pngHostPath;
 }
