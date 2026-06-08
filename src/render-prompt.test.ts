@@ -145,4 +145,15 @@ describe('renderPrompt()', () => {
     expect(out).toContain('docs/adr');
     expect(out).toContain('Glossary & ADR alignment');
   });
+
+  it('renders the slop-check template with screenshots + rubric substituted', async () => {
+    const out = await renderPrompt('slop-check', {
+      SCREENSHOTS_BLOCK: '- route `/` × breakpoint `375` → `/home/agent/captures/root-375.png`',
+      RUBRIC_BLOCK: 'tasteful, accessible',
+    });
+    expect(out).toContain('# Slop-Check critic');
+    expect(out).toContain('/home/agent/captures/root-375.png');
+    expect(out).toContain('tasteful, accessible');
+    expect(out).not.toMatch(/\{\{[A-Z_]+\}\}/);
+  });
 });

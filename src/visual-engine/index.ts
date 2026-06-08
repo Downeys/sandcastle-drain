@@ -51,3 +51,20 @@ export type {
   CreatePreviewAdapterOptions,
   WaitForReadyOptions,
 } from './preview-adapter-runner.js';
+export {
+  buildScreenshotsBlock,
+  createSlopCheckCritic,
+  formatRubric,
+  parseSlopCheckOutput,
+  runSlopCheck,
+  translateCapturePath,
+  SLOP_CHECK_CAPTURES_SANDBOX_PATH,
+} from './slop-check.js';
+export type {
+  RunSlopCheckArgs,
+  RunSlopCheckDeps,
+  SandcastleRunFn,
+  SlopCheckParseResult,
+  SlopCheckRunResult,
+  SlopCheckSandboxConfig,
+} from './slop-check.js';
