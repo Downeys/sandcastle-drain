@@ -79,3 +79,13 @@ export type {
   VisualEditorRunResult,
   VisualEditorSandboxConfig,
 } from './visual-editor.js';
+export { runVisualEngineStandalone } from './standalone.js';
+export type {
+  RunVisualEngineStandaloneArgs,
+  RunVisualEngineStandaloneDeps,
+  VisualEngineStandaloneSandbox,
+} from './standalone.js';
+export {
+  DEFAULT_SUBAGENT_IDLE_TIMEOUT_SECONDS,
+  DEFAULT_SUBAGENT_WALL_CLOCK_TIMEOUT_MS,
+} from './standalone-defaults.js';
