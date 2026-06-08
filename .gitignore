@@ -7,3 +7,4 @@ dist/
 .sandcastle-drain/patches/
 .sandcastle-drain/splits.json
 .sandcastle-drain/staged/
+.sandcastle/
