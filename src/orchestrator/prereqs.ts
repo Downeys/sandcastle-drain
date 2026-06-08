@@ -122,6 +122,12 @@ export const LABEL_DEFINITIONS: readonly LabelDefinition[] = [
     description: 'Most recent drain skipped this issue — see latest comment (wrapper-managed)',
     color: 'BFD4F2',
   },
+  {
+    name: 'ui',
+    description:
+      'Issue affects rendered UI — gates the Visual-Iteration Engine in the drain pipeline',
+    color: '1D76DB',
+  },
 ];
 
 export function probeSkills(): string[] {

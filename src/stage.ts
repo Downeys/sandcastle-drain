@@ -21,7 +21,7 @@
  * for the disk probes once.
  */
 import { cp, mkdir, rm } from 'node:fs/promises';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const STAGED_DIR_RELATIVE = '.sandcastle-drain/staged';
@@ -65,11 +65,30 @@ export async function stage(cwd: string): Promise<void> {
  * stub shouldn't enable the glossary rubric category). `hasAdrs` is true when
  * `docs/adr/` exists at the host root and contains at least one `.md` file
  * other than `README.md`.
+ *
+ * `hasVisualRubric` / `hasPreviewAdapterConfig` are the project-wide gate for
+ * the Visual-Iteration Engine (per ADR 0004 + the canonical paths below):
+ * if either is absent, the engine is skipped *regardless of issue labels*.
  */
 export interface HostRubricFlags {
   readonly hasContextMd: boolean;
   readonly hasAdrs: boolean;
+  readonly hasVisualRubric: boolean;
+  readonly hasPreviewAdapterConfig: boolean;
 }
+
+/**
+ * Canonical paths the engine gate looks at, relative to the host project root.
+ *
+ * The rubric file is opaque to the engine (per ADR 0003 / the `Rubric = unknown`
+ * type) — markdown is the convention because rubrics are mostly prose (art
+ * directions + slop signals, see CONTEXT.md's [[Visual rubric]]).
+ *
+ * The preview-adapter config is JSON because it feeds `createPreviewAdapter`,
+ * whose options are a structured argv + URLs object.
+ */
+export const VISUAL_RUBRIC_PATH_RELATIVE = '.sandcastle-drain/visual-rubric.md';
+export const PREVIEW_ADAPTER_CONFIG_PATH_RELATIVE = '.sandcastle-drain/preview-adapter.json';
 
 const rubricFlagsCache = new Map<string, HostRubricFlags>();
 
@@ -89,9 +108,67 @@ export function detectRubricFlags(cwd: string): HostRubricFlags {
   const result: HostRubricFlags = {
     hasContextMd: hasNonEmptyContextMd(cwd),
     hasAdrs: hasAnyAdr(cwd),
+    hasVisualRubric: hasNonEmptyFile(cwd, VISUAL_RUBRIC_PATH_RELATIVE),
+    hasPreviewAdapterConfig: hasNonEmptyFile(cwd, PREVIEW_ADAPTER_CONFIG_PATH_RELATIVE),
   };
   rubricFlagsCache.set(cwd, result);
   return result;
+}
+
+/**
+ * Engine-gate convenience: true iff the host project has both a visual rubric
+ * and a preview-adapter config. The drain's per-issue gate ANDs this with the
+ * issue's `ui` label (per ADR 0004). Project-level absence is a free skip — no
+ * issue in a project without these files ever invokes the engine, even when
+ * labeled `ui`.
+ */
+export function isVisualEngineConfigured(cwd: string): boolean {
+  const f = detectRubricFlags(cwd);
+  return f.hasVisualRubric && f.hasPreviewAdapterConfig;
+}
+
+/**
+ * The loaded values the engine needs at invocation time. Construction of the
+ * actual `PreviewAdapter` (which spawns a process) is deferred to the engine
+ * call site — this loader only reads the JSON config, so detection-time disk
+ * probes stay side-effect-free.
+ *
+ * The rubric is returned as its raw string contents — the engine's `Rubric`
+ * type is `unknown`, so the host's file is forwarded verbatim to the critic.
+ *
+ * Returns `null` when either file is absent (or empty / invalid JSON) so the
+ * caller can pair this with `isVisualEngineConfigured` and reach for a single
+ * "engine skipped" branch.
+ */
+export interface LoadedVisualConfig {
+  readonly rubric: string;
+  /** Parsed JSON contents of the preview-adapter config file. Opaque here. */
+  readonly previewAdapterConfig: unknown;
+}
+
+export function loadVisualConfig(cwd: string): LoadedVisualConfig | null {
+  const rubricPath = join(cwd, VISUAL_RUBRIC_PATH_RELATIVE);
+  const previewPath = join(cwd, PREVIEW_ADAPTER_CONFIG_PATH_RELATIVE);
+  if (!existsSync(rubricPath) || !existsSync(previewPath)) return null;
+
+  let rubric: string;
+  try {
+    rubric = readFileSync(rubricPath, 'utf8');
+  } catch {
+    return null;
+  }
+  if (rubric.length === 0) return null;
+
+  let previewAdapterConfig: unknown;
+  try {
+    const raw = readFileSync(previewPath, 'utf8');
+    if (raw.trim().length === 0) return null;
+    previewAdapterConfig = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  return { rubric, previewAdapterConfig };
 }
 
 /** Test-only escape hatch: clears the memoization table. */
@@ -119,4 +196,14 @@ function hasAnyAdr(cwd: string): boolean {
     return false;
   }
   return entries.some((name) => name.endsWith('.md') && name !== 'README.md');
+}
+
+function hasNonEmptyFile(cwd: string, relativePath: string): boolean {
+  const path = join(cwd, relativePath);
+  if (!existsSync(path)) return false;
+  try {
+    return statSync(path).size > 0;
+  } catch {
+    return false;
+  }
 }

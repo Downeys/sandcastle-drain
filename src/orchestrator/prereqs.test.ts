@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sandboxPnpmEnv, SANDBOX_VIRTUAL_STORE_DIR } from './prereqs.js';
+import { LABEL_DEFINITIONS, sandboxPnpmEnv, SANDBOX_VIRTUAL_STORE_DIR } from './prereqs.js';
 
 describe('sandboxPnpmEnv', () => {
   it('redirects pnpm\'s virtual store off the bind mount on Windows hosts', () => {
@@ -20,5 +20,14 @@ describe('sandboxPnpmEnv', () => {
   it('is a no-op on non-Windows hosts, where the bind mount is native', () => {
     expect(sandboxPnpmEnv('linux')).toEqual({});
     expect(sandboxPnpmEnv('darwin')).toEqual({});
+  });
+});
+
+describe('LABEL_DEFINITIONS', () => {
+  it('includes `ui` so probeLabels idempotently creates it (Visual-Iteration Engine gate)', () => {
+    const ui = LABEL_DEFINITIONS.find((d) => d.name === 'ui');
+    expect(ui).toBeDefined();
+    expect(ui?.description).toMatch(/visual/i);
+    expect(ui?.color).toMatch(/^[0-9A-Fa-f]{6}$/);
   });
 });
