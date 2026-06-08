@@ -20,6 +20,7 @@ import { runAllPrereqs } from './orchestrator/prereqs.js';
 import { ShipError, shipBranch } from './orchestrator/ship.js';
 import { SweepError, sweepBranch } from './orchestrator/sweep.js';
 import { stage } from './stage.js';
+import { parseVisualFlags, runVisualCommand, VisualFlagsError } from './visual-cli.js';
 
 const HELP_TEXT = `Usage: sandcastle-drain <command> [args]
 
@@ -27,6 +28,7 @@ Commands:
   drain               Drain the queue of \`sandcastle\`-labeled GitHub issues
   ship <issue>        Push, open a PR, and squash-merge \`agent/issue-<N>\`
   sweep <issue>       Post-merge cleanup: remove worktree, delete local branch
+  visual [flags]      Run the Visual-Iteration Engine on the current worktree
 
 Options:
   -h, --help                  Show this help message
@@ -42,6 +44,19 @@ Options:
                               for an even larger repo. Also settable via the
                               SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS env var
                               (the flag wins when both are set).
+
+  Visual subcommand flags:
+  --routes <r1,r2>            Routes to capture (required; repeat or comma-sep)
+  --breakpoints <b1,b2>       Viewport widths (defaults to 375,768,1440)
+  --rubric <path>             Rubric markdown file
+                              (default: .sandcastle-drain/visual-rubric.md)
+  --preview-adapter <path>    Preview-adapter JSON config
+                              (default: .sandcastle-drain/preview-adapter.json)
+  --branch <name>             Branch the visual editor commits to
+                              (default: current git branch)
+  --out-dir <path>            Screenshot output directory
+                              (default: .sandcastle-drain/captures/visual-<ts>)
+  --ceiling <n>               Maximum engine iterations (default: 3)
 
 All paths resolve relative to the current working directory.`;
 
@@ -156,6 +171,7 @@ async function main(): Promise<void> {
   // `gh` being authed — a missing issue number should fail fast with help text.
   let issue: number | undefined;
   let drainFlags: DrainFlags = {};
+  let visualFlags: ReturnType<typeof parseVisualFlags> | undefined;
   switch (subcommand) {
     case 'drain':
       drainFlags = parseDrainFlags(rest);
@@ -163,6 +179,14 @@ async function main(): Promise<void> {
     case 'ship':
     case 'sweep':
       issue = parseIssueArg(subcommand, rest[0]);
+      break;
+    case 'visual':
+      try {
+        visualFlags = parseVisualFlags(rest);
+      } catch (err) {
+        if (err instanceof VisualFlagsError) fail(err.message, { showHelp: true });
+        throw err;
+      }
       break;
     default:
       fail(`Unknown command: ${subcommand}`, { showHelp: true });
@@ -208,6 +232,14 @@ async function main(): Promise<void> {
         await sweepBranch({ issue: issue as number });
       } catch (err) {
         if (err instanceof SweepError) fail(`[sweep] ${err.message}`);
+        throw err;
+      }
+      return;
+    case 'visual':
+      try {
+        await runVisualCommand({ flags: visualFlags as ReturnType<typeof parseVisualFlags> });
+      } catch (err) {
+        if (err instanceof VisualFlagsError) fail(`[visual] ${err.message}`);
         throw err;
       }
       return;
