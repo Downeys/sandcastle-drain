@@ -24,7 +24,7 @@ The wrapper relies on the host machine to supply these. None of them are install
   npx skills@latest add mattpocock/skills/tdd mattpocock/skills/diagnose
   ```
   The wrapper probes for these at startup and refuses to drain without them.
-- **A GitHub repo with the canonical labels.** The wrapper auto-creates any missing labels (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`) on first run.
+- **A GitHub repo with the canonical labels.** The wrapper auto-creates any missing labels (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`, `ui`) on first run. `ui` is the per-issue opt-in for the Visual-Iteration Engine — see [Public API](#public-api).
 
 ## Install
 
@@ -45,8 +45,25 @@ npx sandcastle-drain <subcommand>
 | `npx sandcastle-drain drain`  | Process every open issue labeled `sandcastle`. One agent run per issue, on a branch `agent/issue-N`.    |
 | `npx sandcastle-drain ship N` | Push `agent/issue-N`, open a PR with `Closes #N`, squash-merge it, and delete the remote branch.       |
 | `npx sandcastle-drain sweep N`| Post-merge cleanup: pull main, remove the worktree directory, prune git's worktree metadata, delete the local branch. Refuses to run unless a MERGED PR exists for the branch. |
+| `npx sandcastle-drain visual`| Run the Visual-Iteration Engine once on the current worktree against caller-supplied routes/rubric, and print the iteration report as JSON to stdout. The standalone surface website-midwife's human-in-the-loop pre-draft flow consumes. Run `--help` for flags (`--routes`, `--breakpoints`, `--rubric`, `--preview-adapter`, `--branch`, `--out-dir`, `--ceiling`). |
 
 All paths resolve relative to the host working directory where you ran `npx sandcastle-drain`. The wrapper writes runtime artifacts to `<host-cwd>/.sandcastle-drain/` (logs, worktrees, staged content, optional `splits.json`).
+
+## Public API
+
+Beyond the `sandcastle-drain` binary, the package exposes the **Visual-Iteration Engine** as supported public API on two surfaces:
+
+- **Subpath export — `sandcastle-drain/visual-engine`.** Programmatic access to the engine. The primary entry points are `runVisualEngine` (drive the `capture → critique → edit → recapture` loop) and `computeVerdict` (map findings to a `pass`/`fail` verdict), alongside the engine's public types (`Finding`, `IterationReport`, `Verdict`, `VerdictPolicy`, `Target`, `Rubric`, `PreviewAdapter`, …).
+
+  ```ts
+  import { runVisualEngine, computeVerdict } from 'sandcastle-drain/visual-engine';
+  ```
+
+- **CLI subcommand — `sandcastle-drain visual`.** The thin command-line surface over the same loop (see [Usage](#usage)).
+
+The engine is rubric-agnostic and stack-agnostic: the visual rubric (taste) and the preview adapter (how to boot a given project) are injected by the consumer, not baked in.
+
+**Why the engine lives here.** It ships *inside* sandcastle-drain — as this subpath export plus the CLI subcommand — rather than as its own package, because it legitimately needs dependencies this package already owns (the sandboxed editor, the bundled Docker image, Playwright). website-midwife depends on sandcastle-drain for exactly this engine. Extraction into a standalone shared package is **deferred to the third-consumer trigger**: two consumers is the count this design anticipated, and the cost of premature extraction exceeds the benefit until a third appears. See [ADR 0003](docs/adr/0003-owns-visual-iteration-engine.md) for the ownership decision and [ADR 0005](docs/adr/0005-visual-engine-execution-architecture.md) for the execution architecture.
 
 ## What the wrapper enforces
 
@@ -67,6 +84,8 @@ The reviewer is **gating in the success path** and emits findings advisorily on 
 
 So `PASS` is required for auto-merge, and `FAIL` actively gates the merge by closing the original issue out and queueing a follow-up. The reviewer's findings remain advisory only in the sense that the wrapper does not modify the rejected diff for you — the next implementer run on the follow-up is what addresses them.
 
+**The visual verdict is a third observable terminal outcome**, alongside auto-merge and rejection. On a `ui` issue (see [Public API](#public-api)), the Visual-Iteration Engine runs before the reviewer and produces a `pass`/`fail` verdict. A visual **ceiling-fail** — the engine exhausting its iteration budget without reaching `pass` — blocks auto-merge even when the reviewer returns `PASS`, parking the issue at `needs-review` with the branch preserved and dependents skipped. This is **not** rejection-equivalent: unlike a reviewer `FAIL`, a visual fail keeps the editor's commits (they *are* the work) rather than discarding the branch and filing a follow-up. Hosts that parse outcomes should treat parked-at-`needs-review` as the third terminal state. See [ADR 0004](docs/adr/0004-visual-engine-drain-integration.md).
+
 ## Optional host content
 
 Two host artifacts deepen the reviewer rubric. Both are optional; the wrapper degrades gracefully when they're absent.
@@ -81,7 +100,7 @@ Both files / directories live in the **host project's** working directory, not i
 One, narrowly scoped. The wrapper is otherwise opinionated:
 
 - Model is pinned to `claude-opus-4-7`.
-- Label set is fixed (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`).
+- Label set is fixed (`sandcastle`, `in-progress`, `needs-review`, `blocked`, `retry`, `priority`, `oversized`, `skipped-this-run`, `needs-info`, `ui`). `ui` is user-applied and opt-in per issue: add it to route an issue's UI work through the Visual-Iteration Engine. The engine only runs when the issue carries `ui` **and** the project ships a visual rubric + preview-adapter config — see [ADR 0004](docs/adr/0004-visual-engine-drain-integration.md).
 - Paths are fixed (`<host-cwd>/.sandcastle-drain/staged/`, `<host-cwd>/.sandcastle-drain/worktrees/`, `<host-cwd>/.sandcastle-drain/logs/`).
 - Implementer idle timeout: 10 minutes per run, **overridable via `--idle-timeout <seconds>`**. Wall-clock cap: 90 minutes per run. One auto-retry on idle / wall-clock timeout.
 - Pre-agent dependency install timeout: 45 minutes, **overridable via `--pre-install-timeout <seconds>`** (or the `SANDCASTLE_DRAIN_PRE_INSTALL_TIMEOUT_SECONDS` env var, for projects that invoke `drain` through a fixed `npx` script; the flag wins when both are set). The default is generous because a large monorepo's install is slow on a Windows host — see [Windows install performance](#windows-install-performance).
@@ -121,7 +140,9 @@ This package follows semver with two specific contracts:
 - **Principle file changes are minor.** Renaming a rule, adding a new principle file, tightening guidance — the host's `^x.y.z` range picks them up automatically and the next drain enforces them.
 - **Reviewer rubric changes and reviewer JSON output schema changes are major.** Hosts may parse the verdict comment, and the set of review outcomes hosts see is part of the public contract. A new severity level, a renamed category, or a changed field shape bumps the major version. Pin the major version (`~x.y.z` or `x.y.x`) if you depend on a specific rubric shape.
 
-Other public-API changes (CLI subcommand names, the staged-content layout under `dist/content/`, the orchestrator's exit codes) also bump major.
+Other public-API changes (CLI subcommand names, the staged-content layout under `dist/content/`, the orchestrator's exit codes, the `sandcastle-drain/visual-engine` subpath export and its types, the `visual` subcommand, the `ui` label, and the visual verdict / parked-at-`needs-review` outcome) also bump major.
+
+> The package is pre-1.0, so the breaking-change slot is the **minor** version (`0.x.0`); `^0.x.y` already pins the minor for you. Introducing the visual-engine public surface bumped 0.3.x → 0.4.0 under exactly this discipline.
 
 ## Limitations
 
