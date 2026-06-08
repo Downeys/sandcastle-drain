@@ -34,7 +34,7 @@ import {
 } from './sibling-context.js';
 import { formatSummary, type RunSummary } from './summary.js';
 import { SupersedesChain } from './supersedes-chain.js';
-import { tryRecoverCommits } from './teardown.js';
+import { recoverCommitsFromBranch, tryRecoverCommits } from './teardown.js';
 import {
   removeWorktreeDir,
   sandcastleWorktreePath,
@@ -87,6 +87,12 @@ import {
   type Split,
   type SplitsParseResult,
 } from './splits.js';
+import {
+  formatVisualEngineComment,
+  formatVisualEngineErrorComment,
+  runVisualEngineStep,
+  shouldRunVisualEngine,
+} from './visual-engine-step.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1313,6 +1319,103 @@ async function processIssue(
     attempts: { current: attempt, max: MAX_ATTEMPTS_PER_ISSUE },
   });
   await postComment(issue.number, comment);
+
+  // (e.4) Visual-Iteration Engine — runs after a CI-green ci/fixer pass and
+  // before the Code Reviewer, per the pipeline placement in ADR 0004:
+  //   implementer → ci → fixer → engine → ci → fixer → reviewer
+  // Gated on (a) the issue's `ui` label and (b) the project carrying a visual
+  // rubric + preview-adapter config. The engine itself iterates capture →
+  // critique → edit up to a ceiling (default 3) and may commit polish on the
+  // branch.
+  //
+  // In this slice the visual verdict is **advisory only** — it is posted as a
+  // status comment but auto-merge gating on it lands in the follow-up.
+  // Skipped on rate limit / no commits / CI red, mirroring the reviewer gate.
+  if (
+    commits.length > 0 &&
+    ciResult?.ok === true &&
+    !isRateLimitError(runError) &&
+    !containsRateLimit(stdout) &&
+    shouldRunVisualEngine(issue, REPO_ROOT)
+  ) {
+    console.log(`[wrapper] invoking Visual-Iteration Engine for #${issue.number}`);
+    const preEngineTipSha = await readBranchTipSha(branch);
+    const engineResult = await runVisualEngineStep({
+      issueNumber: issue.number,
+      issueBody: issue.body,
+      branch,
+      repoRoot: REPO_ROOT,
+      imageName: IMAGE_NAME,
+      hostCredsPath: HOST_CREDS_PATH,
+      sandboxCredsPath: SANDBOX_CREDS_PATH,
+      stagedHostPath: join(REPO_ROOT, STAGED_DIR_RELATIVE),
+    });
+    if (engineResult.report !== undefined) {
+      await postComment(
+        issue.number,
+        formatVisualEngineComment({
+          report: engineResult.report,
+          degradedRoutes: engineResult.degradedRoutes,
+        }),
+      );
+      console.log(
+        `[wrapper] Visual-Iteration Engine for #${issue.number}: ${engineResult.report.verdict} after ${engineResult.report.iterations} iteration(s)`,
+      );
+    } else {
+      const reason =
+        engineResult.skipReason ?? engineResult.runError ?? 'unknown error';
+      await postComment(issue.number, formatVisualEngineErrorComment(reason));
+      console.error(
+        `[wrapper] Visual-Iteration Engine for #${issue.number} did not run: ${reason}`,
+      );
+    }
+
+    // (e.4b) Trailing ci/fixer pass — catches build/type/test breakage the
+    // engine's edits introduced before the reviewer sees them. Only runs if
+    // the editor actually committed (branch tip moved); otherwise the prior
+    // CI verdict still applies.
+    const postEngineTipSha = await readBranchTipSha(branch);
+    if (postEngineTipSha !== '' && postEngineTipSha !== preEngineTipSha) {
+      const refreshedCommits = await recoverCommitsFromBranch(branch, REPO_ROOT);
+      if (refreshedCommits.length > 0) commits = refreshedCommits;
+      await cleanupWorktree(worktreePath);
+      let postEngineCi: CiGateResult;
+      try {
+        postEngineCi = await runCiGate({
+          issue: issue.number,
+          branch,
+          repoRoot: REPO_ROOT,
+          worktreePath,
+        });
+        console.log(
+          `[wrapper] CI gate after engine: ${postEngineCi.ok ? 'PASS' : `FAIL (${postEngineCi.packageManager} ${postEngineCi.failedCheck})`}`,
+        );
+      } catch (err) {
+        console.error(`[wrapper] post-engine CI gate threw — treating as failure:`, err);
+        postEngineCi = {
+          ok: false,
+          failedCheck: 'install',
+          runs: [],
+          logPath: '<ci-gate threw before logging>',
+          packageManager: detectPackageManager(REPO_ROOT),
+        };
+      }
+      ciResult = postEngineCi;
+      if (!ciResult.ok && ciResult.runs.length > 0) {
+        const trailing = await runFixLoop({
+          issueNumber: issue.number,
+          branch,
+          ghToken,
+          worktreePath,
+          initialCiResult: ciResult,
+        });
+        ciResult = trailing.finalCiResult;
+        fixerAttempts = [...fixerAttempts, ...trailing.attempts];
+        const finalCommits = await recoverCommitsFromBranch(branch, REPO_ROOT);
+        if (finalCommits.length > 0) commits = finalCommits;
+      }
+    }
+  }
 
   // (e.5) Reviewer pass — only when the implementer made commits, CI is
   // green (after the fix loop above, if any), and the run didn't hit a rate
