@@ -18,7 +18,7 @@
 import { execa } from 'execa';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, posix as posixPath, resolve } from 'node:path';
 import {
   DEFAULT_BREAKPOINTS,
   runVisualEngineStandalone,
@@ -279,7 +279,7 @@ async function resolveBranch(
 
 export function defaultOutDir(cwd: string, now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[:.]/g, '-');
-  return join(cwd, '.sandcastle-drain', 'captures', `visual-${stamp}`);
+  return posixPath.join(cwd, '.sandcastle-drain', 'captures', `visual-${stamp}`);
 }
 
 // ---------------------------------------------------------------------------
