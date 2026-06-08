@@ -18,13 +18,14 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export type PromptName = 'implementer' | 'reviewer' | 'fixer' | 'slop-check';
+export type PromptName = 'implementer' | 'reviewer' | 'fixer' | 'slop-check' | 'visual-editor';
 
 const PROMPT_FILES: Record<PromptName, string> = {
   implementer: 'implementer.md.tpl',
   reviewer: 'reviewer.md.tpl',
   fixer: 'fixer.md.tpl',
   'slop-check': 'slop-check.md.tpl',
+  'visual-editor': 'visual-editor.md.tpl',
 };
 
 const PLACEHOLDER_REGEX = /\{\{([A-Z_][A-Z0-9_]*)\}\}/g;
@@ -69,6 +70,7 @@ export function substitute(
  *   - reviewer: ISSUE_NUMBER + BRANCH, plus HAS_CONTEXT_MD + HAS_ADRS
  *   - fixer: ISSUE_NUMBER + BRANCH + CI_FAILURE_EXCERPT + LAST_COMMIT_SHA, no flags
  *   - slop-check: SCREENSHOTS_BLOCK + RUBRIC_BLOCK, no flags
+ *   - visual-editor: FINDINGS_BLOCK, no flags
  */
 export async function renderPrompt(
   name: PromptName,

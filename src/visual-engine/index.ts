@@ -68,3 +68,14 @@ export type {
   SlopCheckRunResult,
   SlopCheckSandboxConfig,
 } from './slop-check.js';
+export {
+  buildFindingsBlock,
+  createVisualEditor,
+  runVisualEditor,
+} from './visual-editor.js';
+export type {
+  RunVisualEditorArgs,
+  RunVisualEditorDeps,
+  VisualEditorRunResult,
+  VisualEditorSandboxConfig,
+} from './visual-editor.js';
