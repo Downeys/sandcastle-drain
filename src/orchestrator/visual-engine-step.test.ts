@@ -10,11 +10,13 @@ import {
 import {
   buildTargetFromIssue,
   coercePreviewAdapterConfig,
+  deriveVisualOutcome,
   formatVisualEngineComment,
   formatVisualEngineErrorComment,
   shouldRunVisualEngine,
   UI_LABEL,
 } from './visual-engine-step.js';
+import type { RunVisualEngineStepResult } from './visual-engine-step.js';
 import { DEFAULT_BREAKPOINTS } from '../visual-engine/index.js';
 import type { IterationReport } from '../visual-engine/index.js';
 
@@ -182,17 +184,17 @@ describe('formatVisualEngineComment', () => {
     };
   }
 
-  it('marks a pass verdict and explicitly says it is advisory in this slice', () => {
+  it('marks a pass verdict and notes the merge gate allows shipping', () => {
     const comment = formatVisualEngineComment({
       report: baseReport({ verdict: 'pass' }),
       degradedRoutes: false,
     });
     expect(comment).toContain('Visual-Iteration Engine');
     expect(comment).toContain('pass');
-    expect(comment).toContain('advisory');
+    expect(comment).toContain('merge gate: pass');
   });
 
-  it('marks a fail verdict and lists findings with severity badges + suggested fixes', () => {
+  it('marks a fail verdict, signals parked-at-needs-review, lists findings with severity badges + fixes', () => {
     const comment = formatVisualEngineComment({
       report: baseReport({
         verdict: 'fail',
@@ -219,6 +221,11 @@ describe('formatVisualEngineComment', () => {
     });
     expect(comment).toContain('fail');
     expect(comment).toContain('3 iteration');
+    // Fail-verdict hint signals the parked outcome — the editor's polish
+    // stays on the branch, the issue routes to needs-review (not rejection).
+    expect(comment).toContain('merge gate: fail');
+    expect(comment).toContain('needs-review');
+    expect(comment).toContain('branch preserved');
     expect(comment).toContain('header logo overlaps nav');
     expect(comment).toContain('footer link is a touch dim');
     expect(comment).toContain('add padding-top to <main>');
@@ -243,5 +250,50 @@ describe('formatVisualEngineErrorComment', () => {
     const comment = formatVisualEngineErrorComment(reason);
     expect(comment).toContain('skipped');
     expect(comment).toContain(reason);
+  });
+});
+
+describe('deriveVisualOutcome', () => {
+  function report(verdict: 'pass' | 'fail'): IterationReport {
+    return {
+      verdict,
+      findings: [],
+      iterations: 1,
+      breakpointsCaptured: ['375'],
+      targetsCaptured: ['/'],
+      diffSummary: '',
+    };
+  }
+  function result(over: Partial<RunVisualEngineStepResult> = {}): RunVisualEngineStepResult {
+    return {
+      report: undefined,
+      skipped: false,
+      degradedRoutes: false,
+      ...over,
+    };
+  }
+
+  it('returns `not-applicable` when the gate did not run the engine (result undefined)', () => {
+    expect(deriveVisualOutcome(undefined)).toBe('not-applicable');
+  });
+
+  it('returns `pass` when the engine ran end-to-end with a pass verdict', () => {
+    expect(deriveVisualOutcome(result({ report: report('pass') }))).toBe('pass');
+  });
+
+  it('returns `fail` when the engine ran end-to-end with a fail verdict (ceiling-fail)', () => {
+    expect(deriveVisualOutcome(result({ report: report('fail') }))).toBe('fail');
+  });
+
+  it('returns `fail` when the engine was applicable but skipped (no report)', () => {
+    // e.g. Playwright import failed, preview-adapter config rejected. We
+    // can't verify visually — refuse to auto-merge — but never reject.
+    expect(
+      deriveVisualOutcome(result({ skipped: true, skipReason: 'playwright missing' })),
+    ).toBe('fail');
+  });
+
+  it('returns `fail` when the engine threw inside its loop (no report)', () => {
+    expect(deriveVisualOutcome(result({ runError: 'engine boom' }))).toBe('fail');
   });
 });
